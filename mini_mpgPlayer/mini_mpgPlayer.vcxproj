@@ -147,19 +147,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="audio_output.c" />
+    <ClCompile Include="audio.c" />
     <ClCompile Include="bs.c" />
+    <ClCompile Include="decoder.c" />
     <ClCompile Include="frame.c" />
     <ClCompile Include="layer3.c" />
     <ClCompile Include="mini_mpgPlayer.c" />
     <ClCompile Include="synthesis.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="audio_output.h" />
+    <ClInclude Include="audio.h" />
     <ClInclude Include="bs.h" />
+    <ClInclude Include="decoder.h" />
     <ClInclude Include="frame.h" />
     <ClInclude Include="huffman.h" />
     <ClInclude Include="layer3.h" />
+    <ClInclude Include="old_huffman.h" />
     <ClInclude Include="synthesis.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -1,13 +1,13 @@
-#include "audio_output.h"
-//#include <stdio.h>
+#include "audio.h"
+#include <stdio.h>
 #include <Windows.h>
 
 #pragma comment(lib, "Winmm.lib")
 
 static CRITICAL_SECTION g_cs;
-
 static HWAVEOUT g_WaveDev;
-static int g_nBslocks;
+static int g_nBlocks;
+static const int g_maxBlocks = 8;
 
 static void CALLBACK waveout_callback(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
@@ -21,16 +21,16 @@ static void CALLBACK waveout_callback(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInsta
 		hg = GlobalHandle(wh);
 		GlobalUnlock(hg);
 		GlobalFree(hg);
-		--g_nBslocks;
+		--g_nBlocks;
 		LeaveCriticalSection(&g_cs);
 	}
 }
 
-bool audio_open(unsigned short nch, unsigned rate)
+int audio_open(unsigned short nch, unsigned rate)
 {
 	if (!waveOutGetNumDevs()) {
 		MessageBoxA(GetConsoleWindow(), "no audio devices!", "", MB_OK);
-		return false;
+		return -1;
 	}
 
 	WAVEFORMATEX wfx;
@@ -43,40 +43,41 @@ bool audio_open(unsigned short nch, unsigned rate)
 	wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nChannels * wfx.wBitsPerSample / 8;
 	wfx.nBlockAlign = wfx.nAvgBytesPerSec / wfx.nSamplesPerSec;	// wfx.nChannels * wfx.wBitsPerSample / 8
 
-	if ((mmr = waveOutOpen(&g_WaveDev, NULL, &wfx, (DWORD_PTR)waveout_callback, 0, CALLBACK_FUNCTION)) != MMSYSERR_NOERROR) {
+	if ((mmr = waveOutOpen(&g_WaveDev, WAVE_MAPPER, &wfx, (DWORD_PTR)waveout_callback, 0, CALLBACK_FUNCTION)) != MMSYSERR_NOERROR) {
 		MessageBoxA(GetConsoleWindow(), "open audio device failed!", "", MB_OK);
-		return false;
+		return mmr;
 	}
 
 	waveOutReset(g_WaveDev);
 	InitializeCriticalSection(&g_cs);
-	g_nBslocks = 0;
-	return true;
+	g_nBlocks = 0;
+
+	return 0;
 }
 
 void audio_close(void)
 {
 	if (g_WaveDev) {
-		while (g_nBslocks > 0)
+		while (g_nBlocks > 0)
 			Sleep(77);
 
 		waveOutReset(g_WaveDev);
 		waveOutClose(g_WaveDev);
 		g_WaveDev = NULL;
 		DeleteCriticalSection(&g_cs);
-		g_nBslocks = 0;
+		g_nBlocks = 0;
 	}
 }
 
-bool play_samples(const void* data, unsigned len)
+int play_samples(const void* data, unsigned len)
 {
-	while (g_nBslocks > 8)
+	while (g_nBlocks > g_maxBlocks)
 		Sleep(77);
 
 	HGDIOBJ hg_Data = GlobalAlloc(GMEM_MOVEABLE, len);
 	if (!hg_Data) {
 		MessageBoxA(GetConsoleWindow(), "GlobalAlloc failed!(hg_Data)", "Error...", MB_OK);
-		return false;
+		return -1;
 	}
 	void* pData = GlobalLock(hg_Data);
 	CopyMemory(pData, data, len);
@@ -86,7 +87,7 @@ bool play_samples(const void* data, unsigned len)
 		GlobalUnlock(hg_Data);
 		GlobalFree(hg_Data);
 		MessageBoxA(GetConsoleWindow(), "GlobalAlloc failed!(hg_Hdr)", "Error...", MB_OK);
-		return false;
+		return -1;
 	}
 	LPWAVEHDR wh = GlobalLock(hg_Hdr);
 	wh->dwBufferLength = len;
@@ -101,10 +102,10 @@ bool play_samples(const void* data, unsigned len)
 			waveOutUnprepareHeader(g_WaveDev, wh, sizeof(WAVEHDR));
 			break;
 		}
-		++g_nBslocks;
+		++g_nBlocks;
 		LeaveCriticalSection(&g_cs);
-		return true;
-	} while (false);
+		return 0;
+	} while (0);
 
 	GlobalUnlock(hg_Data);
 	GlobalFree(hg_Data);
@@ -112,5 +113,5 @@ bool play_samples(const void* data, unsigned len)
 	GlobalFree(hg_Hdr);
 	LeaveCriticalSection(&g_cs);
 
-	return false;
+	return -1;
 }

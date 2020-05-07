@@ -1,7 +1,7 @@
-#pragma once
+#ifndef _MMP_FRAME_H_
+#define _MMP_FRAME_H_ 1
 
-#include "bitstream.h"
-#include <stdbool.h>
+#include "bs.h"
 
 enum MPEG_VERSION { VERSION_25, VERSION_RESERVED, VERSION_20, VERSION_10 };
 enum MPEG_LAYER { LAYER_RESERVED, LAYER_3, LAYER_2, LAYER_1 };
@@ -10,34 +10,40 @@ enum MPEG_MODE { MODE_Stereo, MODE_JointStereo, MODE_DualChannel, MODE_Mono };
 struct mpeg_header {
 	enum MPEG_VERSION version;
 	enum MPEG_LAYER layer;
-	unsigned protection_bit;
-	unsigned bitrate_index;
-	unsigned sampling_frequency;
-	unsigned padding_bit;
-	unsigned private_bit;
+	unsigned char protection_bit;
+	unsigned char bitrate_index;
+	unsigned char sampling_frequency;
+	unsigned char padding_bit;
+	unsigned char private_bit;
 	enum MPEG_MODE mode;
-	unsigned mode_extension;
-	unsigned copyright;
-	unsigned original;
-	unsigned emphasis;
+	unsigned char mode_extension;
+	unsigned char copyright;
+	unsigned char original;
+	unsigned char emphasis;
 };
 
 struct mpeg_frame {
 	struct mpeg_header header;
 
-	bool lsf;
-	bool is_MS;
-	bool is_Intensity;
-	bool freeformat;
+	unsigned short crc16_sum;
+
+	unsigned char lsf;
+	unsigned char freeformat;
+
+	unsigned char is_MS;
+	unsigned char is_Intensity;
+
+	unsigned nch;
 
 	unsigned bitrate;
 	unsigned samplingrate;
 
-	int nch;
-
 	unsigned frame_size;
+	unsigned header_size;	// Including CRC-16 data
 	unsigned sideinfo_size;
 	unsigned maindata_size;
 };
 
-int decode_next_frame(struct mpeg_frame* frame, struct bitstream* stream);
+int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bstream);
+
+#endif // !_MMP_FRAME_H_

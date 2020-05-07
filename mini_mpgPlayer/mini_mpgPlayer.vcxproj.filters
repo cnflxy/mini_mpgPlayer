@@ -27,10 +27,13 @@
     <ClCompile Include="synthesis.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="audio_output.c">
+    <ClCompile Include="bs.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="bs.c">
+    <ClCompile Include="audio.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="decoder.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,10 +50,16 @@
     <ClInclude Include="synthesis.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="audio_output.h">
+    <ClInclude Include="bs.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="bs.h">
+    <ClInclude Include="audio.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="decoder.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="old_huffman.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
