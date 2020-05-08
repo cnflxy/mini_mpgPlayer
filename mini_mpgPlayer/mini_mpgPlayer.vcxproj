@@ -45,6 +45,7 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <SpectreMitigation>false</SpectreMitigation>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -154,6 +155,7 @@
     <ClCompile Include="layer3.c" />
     <ClCompile Include="mini_mpgPlayer.c" />
     <ClCompile Include="synthesis.c" />
+    <ClCompile Include="tag.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="audio.h" />
@@ -162,8 +164,10 @@
     <ClInclude Include="frame.h" />
     <ClInclude Include="huffman.h" />
     <ClInclude Include="layer3.h" />
+    <ClInclude Include="newhuffman.h" />
     <ClInclude Include="old_huffman.h" />
-    <ClInclude Include="synthesis.h" />
+    <ClInclude Include="synth.h" />
+    <ClInclude Include="tag.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

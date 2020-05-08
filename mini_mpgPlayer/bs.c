@@ -23,11 +23,7 @@ struct bs* bs_Init(unsigned size, const char* const file_name)
 		return s;
 	} while (0);
 
-	if (s) {
-		if (s->bit_buf)
-			free(s->bit_buf);
-		free(s);
-	}
+	bs_Release(&s);
 
 	return NULL;
 }

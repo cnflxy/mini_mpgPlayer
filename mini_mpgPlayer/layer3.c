@@ -1,7 +1,7 @@
 #include "layer3.h"
 #include "huffman.h"
-#include "synthesis.h"
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
 #define	SBLIMIT	32
@@ -51,9 +51,9 @@ static struct {
 } cur_sfb_table;
 
 // scalefactor band preemphasis (used only when preflag is set)
-static const unsigned char pretab[2][22] = {
+static const unsigned char pretab[2][21] = {
 	{ 0 },
-	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 2, 0 }
+	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 2 }
 };
 
 static struct {
@@ -67,11 +67,9 @@ static float gain_powreq[8207];
 // gain_pow2_is[i] = 2^i
 static float gain_pow2_is[256 + 118 + 4];
 
-
 static float pre_block[2][32 * 18];
 static float samples[2][32];
 
-#if 0
 /*
 coefficients for aliasing reduction
 
@@ -79,7 +77,7 @@ c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037}
 cs[i] = 1 / sqrt(1 + c[i]^2)
 ca[i] = c[i] / sqrt(1 + c[i]^2)
 */
-static const float __c[8] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037 };
+static const float __c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037 };
 static float cs[8], ca[8];
 
 /*
@@ -104,7 +102,7 @@ windowing coefficients for short blocks
 window_s[i] = sin(PI * (i + 1/2) / 12) = sin(PI * (2 * i + 1) / 24)
 */
 static float window_s[12];
-#endif
+
 /*
 coefficients for intensity stereo processing
 
@@ -113,6 +111,151 @@ is_table[i] = is_ratio[i] / (1 + is_ratio[i])
 */
 static float is_table[7];
 
+/*
+coefficients Di for the synthesis window
+*/
+static float _D[] =
+{
+	0.000000000, -0.000015259, -0.000015259, -0.000015259,
+	-0.000015259, -0.000015259, -0.000015259, -0.000030518,
+	-0.000030518, -0.000030518, -0.000030518, -0.000045776,
+	-0.000045776, -0.000061035, -0.000061035, -0.000076294,
+	-0.000076294, -0.000091553, -0.000106812, -0.000106812,
+	-0.000122070, -0.000137329, -0.000152588, -0.000167847,
+	-0.000198364, -0.000213623, -0.000244141, -0.000259399,
+	-0.000289917, -0.000320435, -0.000366211, -0.000396729,
+	-0.000442505, -0.000473022, -0.000534058, -0.000579834,
+	-0.000625610, -0.000686646, -0.000747681, -0.000808716,
+	-0.000885010, -0.000961304, -0.001037598, -0.001113892,
+	-0.001205444, -0.001296997, -0.001388550, -0.001480103,
+	-0.001586914, -0.001693726, -0.001785278, -0.001907349,
+	-0.002014160, -0.002120972, -0.002243042, -0.002349854,
+	-0.002456665, -0.002578735, -0.002685547, -0.002792358,
+	-0.002899170, -0.002990723, -0.003082275, -0.003173828,
+	0.003250122, 0.003326416, 0.003387451, 0.003433228,
+	0.003463745, 0.003479004, 0.003479004, 0.003463745,
+	0.003417969, 0.003372192, 0.003280640, 0.003173828,
+	0.003051758, 0.002883911, 0.002700806, 0.002487183,
+	0.002227783, 0.001937866, 0.001617432, 0.001266479,
+	0.000869751, 0.000442505, -0.000030518, -0.000549316,
+	-0.001098633, -0.001693726, -0.002334595, -0.003005981,
+	-0.003723145, -0.004486084, -0.005294800, -0.006118774,
+	-0.007003784, -0.007919312, -0.008865356, -0.009841919,
+	-0.010848999, -0.011886597, -0.012939453, -0.014022827,
+	-0.015121460, -0.016235352, -0.017349243, -0.018463135,
+	-0.019577026, -0.020690918, -0.021789551, -0.022857666,
+	-0.023910522, -0.024932861, -0.025909424, -0.026840210,
+	-0.027725220, -0.028533936, -0.029281616, -0.029937744,
+	-0.030532837, -0.031005859, -0.031387329, -0.031661987,
+	-0.031814575, -0.031845093, -0.031738281, -0.031478882,
+	0.031082153, 0.030517578, 0.029785156, 0.028884888,
+	0.027801514, 0.026535034, 0.025085449, 0.023422241,
+	0.021575928, 0.019531250, 0.017257690, 0.014801025,
+	0.012115479, 0.009231567, 0.006134033, 0.002822876,
+	-0.000686646, -0.004394531, -0.008316040, -0.012420654,
+	-0.016708374, -0.021179199, -0.025817871, -0.030609131,
+	-0.035552979, -0.040634155, -0.045837402, -0.051132202,
+	-0.056533813, -0.061996460, -0.067520142, -0.073059082,
+	-0.078628540, -0.084182739, -0.089706421, -0.095169067,
+	-0.100540161, -0.105819702, -0.110946655, -0.115921021,
+	-0.120697021, -0.125259399, -0.129562378, -0.133590698,
+	-0.137298584, -0.140670776, -0.143676758, -0.146255493,
+	-0.148422241, -0.150115967, -0.151306152, -0.151962280,
+	-0.152069092, -0.151596069, -0.150497437, -0.148773193,
+	-0.146362305, -0.143264771, -0.139450073, -0.134887695,
+	-0.129577637, -0.123474121, -0.116577148, -0.108856201,
+	0.100311279, 0.090927124, 0.080688477, 0.069595337,
+	0.057617187, 0.044784546, 0.031082153, 0.016510010,
+	0.001068115, -0.015228271, -0.032379150, -0.050354004,
+	-0.069168091, -0.088775635, -0.109161377, -0.130310059,
+	-0.152206421, -0.174789429, -0.198059082, -0.221984863,
+	-0.246505737, -0.271591187, -0.297210693, -0.323318481,
+	-0.349868774, -0.376800537, -0.404083252, -0.431655884,
+	-0.459472656, -0.487472534, -0.515609741, -0.543823242,
+	-0.572036743, -0.600219727, -0.628295898, -0.656219482,
+	-0.683914185, -0.711318970, -0.738372803, -0.765029907,
+	-0.791213989, -0.816864014, -0.841949463, -0.866363525,
+	-0.890090942, -0.913055420, -0.935195923, -0.956481934,
+	-0.976852417, -0.996246338, -1.014617920, -1.031936646,
+	-1.048156738, -1.063217163, -1.077117920, -1.089782715,
+	-1.101211548, -1.111373901, -1.120223999, -1.127746582,
+	-1.133926392, -1.138763428, -1.142211914, -1.144287109,
+	1.144989014, 1.144287109, 1.142211914, 1.138763428,
+	1.133926392, 1.127746582, 1.120223999, 1.111373901,
+	1.101211548, 1.089782715, 1.077117920, 1.063217163,
+	1.048156738, 1.031936646, 1.014617920, 0.996246338,
+	0.976852417, 0.956481934, 0.935195923, 0.913055420,
+	0.890090942, 0.866363525, 0.841949463, 0.816864014,
+	0.791213989, 0.765029907, 0.738372803, 0.711318970,
+	0.683914185, 0.656219482, 0.628295898, 0.600219727,
+	0.572036743, 0.543823242, 0.515609741, 0.487472534,
+	0.459472656, 0.431655884, 0.404083252, 0.376800537,
+	0.349868774, 0.323318481, 0.297210693, 0.271591187,
+	0.246505737, 0.221984863, 0.198059082, 0.174789429,
+	0.152206421, 0.130310059, 0.109161377, 0.088775635,
+	0.069168091, 0.050354004, 0.032379150, 0.015228271,
+	-0.001068115, -0.016510010, -0.031082153, -0.044784546,
+	-0.057617187, -0.069595337, -0.080688477, -0.090927124,
+	0.100311279, 0.108856201, 0.116577148, 0.123474121,
+	0.129577637, 0.134887695, 0.139450073, 0.143264771,
+	0.146362305, 0.148773193, 0.150497437, 0.151596069,
+	0.152069092, 0.151962280, 0.151306152, 0.150115967,
+	0.148422241, 0.146255493, 0.143676758, 0.140670776,
+	0.137298584, 0.133590698, 0.129562378, 0.125259399,
+	0.120697021, 0.115921021, 0.110946655, 0.105819702,
+	0.100540161, 0.095169067, 0.089706421, 0.084182739,
+	0.078628540, 0.073059082, 0.067520142, 0.061996460,
+	0.056533813, 0.051132202, 0.045837402, 0.040634155,
+	0.035552979, 0.030609131, 0.025817871, 0.021179199,
+	0.016708374, 0.012420654, 0.008316040, 0.004394531,
+	0.000686646, -0.002822876, -0.006134033, -0.009231567,
+	-0.012115479, -0.014801025, -0.017257690, -0.019531250,
+	-0.021575928, -0.023422241, -0.025085449, -0.026535034,
+	-0.027801514, -0.028884888, -0.029785156, -0.030517578,
+	0.031082153, 0.031478882, 0.031738281, 0.031845093,
+	0.031814575, 0.031661987, 0.031387329, 0.031005859,
+	0.030532837, 0.029937744, 0.029281616, 0.028533936,
+	0.027725220, 0.026840210, 0.025909424, 0.024932861,
+	0.023910522, 0.022857666, 0.021789551, 0.020690918,
+	0.019577026, 0.018463135, 0.017349243, 0.016235352,
+	0.015121460, 0.014022827, 0.012939453, 0.011886597,
+	0.010848999, 0.009841919, 0.008865356, 0.007919312,
+	0.007003784, 0.006118774, 0.005294800, 0.004486084,
+	0.003723145, 0.003005981, 0.002334595, 0.001693726,
+	0.001098633, 0.000549316, 0.000030518, -0.000442505,
+	-0.000869751, -0.001266479, -0.001617432, -0.001937866,
+	-0.002227783, -0.002487183, -0.002700806, -0.002883911,
+	-0.003051758, -0.003173828, -0.003280640, -0.003372192,
+	-0.003417969, -0.003463745, -0.003479004, -0.003479004,
+	-0.003463745, -0.003433228, -0.003387451, -0.003326416,
+	0.003250122, 0.003173828, 0.003082275, 0.002990723,
+	0.002899170, 0.002792358, 0.002685547, 0.002578735,
+	0.002456665, 0.002349854, 0.002243042, 0.002120972,
+	0.002014160, 0.001907349, 0.001785278, 0.001693726,
+	0.001586914, 0.001480103, 0.001388550, 0.001296997,
+	0.001205444, 0.001113892, 0.001037598, 0.000961304,
+	0.000885010, 0.000808716, 0.000747681, 0.000686646,
+	0.000625610, 0.000579834, 0.000534058, 0.000473022,
+	0.000442505, 0.000396729, 0.000366211, 0.000320435,
+	0.000289917, 0.000259399, 0.000244141, 0.000213623,
+	0.000198364, 0.000167847, 0.000152588, 0.000137329,
+	0.000122070, 0.000106812, 0.000106812, 0.000091553,
+	0.000076294, 0.000076294, 0.000061035, 0.000061035,
+	0.000045776, 0.000045776, 0.000030518, 0.000030518,
+	0.000030518, 0.000030518, 0.000015259, 0.000015259,
+	0.000015259, 0.000015259, 0.000015259, 0.000015259
+};	// need init ( _D[i] *= 32768 )
+
+/*
+coefficients Nik for the synthesis window
+*/
+static float _N[64][32]; // need init ( _N[i][k] = cos((16+i)*(2*k+1)*PI/64) )
+// static float _N[32][32]; // need init ( _N[i][k] = cos(i*(2*k+1)*PI/64) )
+
+static float _V[2][1024];
+static int _V_index[2];
+
+float buf[2][32 * 18];
 
 static int l3_decode_sideinfo(struct bitstream* decode_stream, struct l3_sideinfo* si, const int nch)
 {
@@ -146,11 +289,8 @@ static int l3_decode_sideinfo(struct bitstream* decode_stream, struct l3_sideinf
 				}
 			}
 
-			cur_ch->blocksplit_flag = bs_readBit(decode_stream);
-			if (cur_ch->blocksplit_flag) {
-				cur_ch->region0_count = 36 >> 1;
-				cur_ch->region1_count = 576 >> 1;
-
+			cur_ch->win_switch_flag = bs_readBit(decode_stream);
+			if (cur_ch->win_switch_flag == 1) {
 				cur_ch->block_type = bs_readBits(decode_stream, 2);
 
 				if (cur_ch->block_type == 0) {
@@ -169,18 +309,28 @@ static int l3_decode_sideinfo(struct bitstream* decode_stream, struct l3_sideinf
 
 				for (int window = 0; window < 3; ++window)
 					cur_ch->subblock_gain[window] = bs_readBits(decode_stream, 3);
-			} else {
-				cur_ch->block_type = 0;
-				cur_ch->mixed_block_flag = 0;
 
+				if (cur_ch->block_type == 2 && cur_ch->mixed_block_flag == 0)
+					cur_ch->region0_count = 8;
+				else cur_ch->region0_count = 7;
+				cur_ch->region1_count = 20 - cur_ch->region0_count;
+
+				//cur_ch->region0_count = 36 >> 1;
+				//cur_ch->region1_count = 576 >> 1;
+			} else {
 				for (int region = 0; region < 3; ++region)
 					cur_ch->table_select[region] = bs_readBits(decode_stream, 5);
 
-				int r1 = bs_readBits(decode_stream, 4) + 1, r2 = bs_readBits(decode_stream, 3) + 1;
-				cur_ch->region0_count = cur_sfb_table.index_long[r1] >> 1;
-				if (r1 + r2 > 22)
-					cur_ch->region1_count = 576 >> 1;
-				else cur_ch->region1_count = cur_sfb_table.index_long[r1 + r2] >> 1;
+				//int r1 = bs_readBits(decode_stream, 4) + 1, r2 = bs_readBits(decode_stream, 3) + 1;
+				//cur_ch->region0_count = cur_sfb_table.index_long[r1] >> 1;
+				//if (r1 + r2 > 22)
+				//	cur_ch->region1_count = 576 >> 1;
+				//else cur_ch->region1_count = cur_sfb_table.index_long[r1 + r2] >> 1;
+				cur_ch->region0_count = bs_readBits(decode_stream, 4);
+				cur_ch->region1_count = bs_readBits(decode_stream, 3);
+
+				cur_ch->block_type = 0;
+				cur_ch->mixed_block_flag = 0;
 			}
 			cur_ch->preflag = bs_readBit(decode_stream);
 			cur_ch->scalefac_scale = bs_readBit(decode_stream);
@@ -196,305 +346,416 @@ static void l3_decode_scalefactors(struct bitstream* stream, struct l3_sideinfo*
 	struct ch_info* cur_ch = &si->info_ch[ch][gr];
 	const unsigned char slen0 = sflen_table[0][cur_ch->scalefac_compress];
 	const unsigned char slen1 = sflen_table[1][cur_ch->scalefac_compress];
-	unsigned char* l = si->scalefac_l[ch];
-	unsigned char* s = si->scalefac_s[ch];
 	int sfi;
 
 	if (cur_ch->part2_3_len == 0) {
-		for (sfi = 0; sfi < 23; ++sfi) {
-			l[sfi] = 0;
-			s[sfi] = 0;
+		for (sfi = 0; sfi < 21; ++sfi) {
+			cur_ch->scalefac_l[sfi] = 0;
+			cur_ch->scalefac_s[sfi] = 0;
 		}
-		for (sfi = 23; sfi < 39; ++sfi)
-			s[sfi];
-		cur_ch->part2_len = 0;
+		for (sfi = 23; sfi < 36; ++sfi)
+			cur_ch->scalefac_s[sfi];
 		return;
 	}
 
-	if (cur_ch->blocksplit_flag && cur_ch->block_type == 2) {
-		if (cur_ch->mixed_block_flag) {
+	if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
+		if (cur_ch->mixed_block_flag == 1) {
 			// MIXED block
-			cur_ch->part2_len = 17 * slen1 + 18 * slen0;
+			// cur_ch->part2_len = 17 * slen1 + 18 * slen0;
 			for (sfi = 0; sfi < 8; ++sfi)
-				l[sfi] = bs_readBits(stream, slen0);
-			for (sfi = 8; sfi < 23; ++sfi)
-				l[sfi] = 0;
-			for (sfi = 0; sfi < 9; ++sfi)
-				s[sfi] = 0;
-			for (sfi = 9; sfi < 18; ++sfi)
-				s[sfi] = bs_readBits(stream, slen0);
+				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen0);
+
+			for (sfi = 3; sfi < 12; ++sfi) {
+				unsigned nbits = sfi < 6 ? slen0 : slen1;
+				for (int win = 0; win < 3; ++win)
+					cur_ch->scalefac_s[sfi * 3 + win] = bs_readBits(stream, nbits);
+			}
 		} else {
 			// pure SHORT block
-			cur_ch->part2_len = 18 * (slen0 + slen1);
-			for (sfi = 0; sfi < 18; ++sfi)
-				s[sfi] = bs_readBits(stream, slen0);
+			// cur_ch->part2_len = 18 * (slen0 + slen1);
+			for (sfi = 0; sfi < 12; ++sfi) {
+				unsigned nbits = sfi < 6 ? slen0 : slen1;
+				for (int win = 0; win < 3; ++win)
+					cur_ch->scalefac_s[sfi * 3 + win] = bs_readBits(stream, nbits);
+			}
 		}
-		for (sfi = 18; sfi < 36; ++sfi)
-			s[sfi] = bs_readBits(stream, slen1);
-		for (sfi = 36; sfi < 39; ++sfi)
-			s[sfi] = 0;
 	} else {
 		// LONG types 0,1,3
-		if (gr == 0) {
-			cur_ch->part2_len = 10 * (slen0 + slen1) + slen0;
-			for (sfi = 0; sfi < 11; ++sfi)
-				l[sfi] = bs_readBits(stream, slen0);
-			for (sfi = 11; sfi < 21; ++sfi)
-				l[sfi] = bs_readBits(stream, slen1);
-		} else {
-			cur_ch->part2_len = 0;
-			if (si->scfsi[ch] & 0x8) {
-				for (sfi = 0; sfi < 6; ++sfi)
-					l[sfi] = 0;
-			} else {
-				for (sfi = 0; sfi < 6; ++sfi)
-					l[sfi] = bs_readBits(stream, slen0);
-				cur_ch->part2_len += 6 * slen0;
-			}
 
-			if (si->scfsi[ch] & 0x4) {
-				for (sfi = 6; sfi < 11; ++sfi)
-					l[sfi] = 0;
-			} else {
-				for (sfi = 6; sfi < 11; ++sfi)
-					l[sfi] = bs_readBits(stream, slen0);
-				cur_ch->part2_len += 5 * slen0;
-			}
+		/* Scale factor bands 0-5 */
+		if (!(si->scfsi[ch] & 0x8) || !gr) {
+			for (sfi = 0; sfi < 6; ++sfi)
+				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen0);
+		} else if ((si->scfsi[ch] & 0x8) && gr) {
+			/* Copy scalefactors from granule 0 to granule 1 */
+			for (sfi = 0; sfi < 6; ++sfi)
+				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
+		}
 
-			if (si->scfsi[ch] & 0x2) {
-				for (sfi = 11; sfi < 16; ++sfi)
-					l[sfi] = 0;
-			} else {
-				for (sfi = 11; sfi < 16; ++sfi)
-					l[sfi] = bs_readBits(stream, slen1);
-				cur_ch->part2_len += 5 * slen1;
+		/* Scale factor bands 6-10 */
+		if (!(si->scfsi[ch] & 0x4) || !gr) {
+			for (sfi = 6; sfi < 11; ++sfi) {
+				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen0);
 			}
-
-			if (si->scfsi[ch] & 0x1) {
-				for (sfi = 16; sfi < 21; ++sfi)
-					l[sfi] = 0;
-			} else {
-				for (sfi = 16; sfi < 21; ++sfi)
-					l[sfi] = bs_readBits(stream, slen1);
-				cur_ch->part2_len += 5 * slen1;
+		} else if ((si->scfsi[ch] & 0x4) && gr) {
+			/* Copy scalefactors from granule 0 to granule 1 */
+			for (sfi = 6; sfi < 11; ++sfi) {
+				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
 			}
 		}
-		for (sfi = 21; sfi < 23; ++sfi)
-			l[sfi] = 0;
+
+		/* Scale factor bands 11-15 */
+		if (!(si->scfsi[ch] & 0x2) || !gr) {
+			for (sfi = 11; sfi < 16; ++sfi) {
+				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen1);
+			}
+		} else if ((si->scfsi[ch] & 0x2) && gr) {
+			/* Copy scalefactors from granule 0 to granule 1 */
+			for (sfi = 11; sfi < 16; ++sfi) {
+				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
+			}
+		}
+
+		/* Scale factor bands 16-20 */
+		if (!(si->scfsi[ch] & 0x1) || !gr) {
+			for (sfi = 16; sfi < 21; ++sfi) {
+				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen1);
+			}
+		} else if ((si->scfsi[ch] & 0x1) && gr) {
+			/* Copy scalefactors from granule 0 to granule 1 */
+			for (sfi = 16; sfi < 21; ++sfi) {
+				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
+			}
+		}
 	}
 }
 
 static int _l3_huff_val[SBLIMIT * SSLIMIT];
-static int l3_huffman_decode(struct bitstream* stream, struct l3_sideinfo* si, const int gr, const int ch)
+static void l3_huffman_decode(struct bs* maindata_stream, struct ch_info *cur_ch, int gr, int ch, int bit_pos_end, float is[576])
 {
-	struct ch_info* cur_ch = &si->info_ch[ch][gr];
-	int region[4] = { 0 };
-	int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
-	int idx = 0;
+	int region1_start, region2_start, is_pos, bv = cur_ch->big_values * 2;
+	const struct huff_tab* htab;
+	unsigned mask;
+	int x, y, v, i, off = 0, tmp, idx = 0;
 
 	if (cur_ch->part2_3_len == 0) {
-		for (; idx < 576; ++idx)
-			_l3_huff_val[idx] = 0;
-		return 0;
+		LOG_W("check_len", "part2_3_len == 0");
+		for (is_pos = 0; is_pos < 576; ++is_pos)
+			_l3_huff_val[is_pos] = 0;
+		cur_ch->nonzero_len = 0;
+		return;
 	}
 
-	unsigned int mask;
-	int num = (8 - stream->bit_pos) & 7;
-	mask = bs_readBits(stream, num) << 24;
-	mask <<= 8 - num;
-	part3_len -= num;
+	//int num = (8 - maindata_stream->bit_pos) & 7;
+	//mask = bs_readBits(maindata_stream, num) << 24;
+	//mask <<= 8 - num;
 
-	{
-		int r1 = cur_ch->region0_count, r2 = cur_ch->region1_count, bv = cur_ch->big_values;
-		if (cur_ch->blocksplit_flag) {
-			r1 = 36;
-			r2 = 576;
+	if (cur_ch->win_switch_flag && cur_ch->block_type == 2) {
+		region1_start = 36;
+		region2_start = 576;
+	} else {
+		region1_start = cur_sfb_table.index_long[cur_ch->region0_count + 1];
+		region2_start = cur_sfb_table.index_long[cur_ch->region0_count + region1_start + 2];
+	}
+
+	// 解码大值区
+	for (is_pos = 0; is_pos < bv; ++is_pos) {
+		if (is_pos < region1_start) {
+			htab = ht + cur_ch->table_select[0];
+		} else if (is_pos < region2_start) {
+			htab = ht + cur_ch->table_select[1];
 		} else {
-			r1 = cur_ch->region0_count + 1;
-			r2 = cur_ch->region1_count + 1 + r1;
-			if (r2 > 22) r2 = 22;
-			r1 = cur_sfb_table.index_long[r1];
-			r2 = cur_sfb_table.index_long[r2];
+			htab = ht + cur_ch->table_select[2];
 		}
 
-		if (bv <= r1)
-			region[0] = region[1] = region[2] = bv;
-		else {
-			region[0] = r1;
-			if (bv <= r2)
-				region[1] = region[2] = bv;
-			else {
-				region[1] = r2;
-				region[2] = bv;
-			}
+		while ((y = htab->table[off++]) < 0) {
+			if (bs_readBit(maindata_stream))
+				off -= y;
 		}
+
+		x = y >> 4;
+		y &= 0xf;
+
+		if (x == 15 && htab->linbits) {
+			x += bs_readBits(maindata_stream, htab->linbits);
+			if (x > 0 && bs_readBit(maindata_stream))
+				x = -x;
+		} else if (x) {
+			if (x > 0 && bs_readBit(maindata_stream))
+				x = -x;
+		}
+		_l3_huff_val[is_pos++] = x;
+
+		if (y == 15 && htab->linbits) {
+			y += bs_readBits(maindata_stream, htab->linbits);
+			if (y > 0 && bs_readBit(maindata_stream))
+				y = -y;
+		} else if (y) {
+			if (y > 0 && bs_readBit(maindata_stream))
+				y = -y;
+		}
+		_l3_huff_val[is_pos] = y;
 	}
 
-	//int tmp, maxidx, idx = 0;
-	//const struct huff_tab* htab;
+	htab = htc + cur_ch->count1table_select;
 
-	///*
-	// * 1. 初始化num,mask,part3len
-	// * mask: 暂存位流缓冲区不超过32比特数据,位流2级缓冲
-	// * num: mask剩余的比特数
-	// * part3len: 哈夫曼编码的主数据(main_data)的比特数
-	// */
-	//int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
-	//int num = (8 - stream->bit_pos) & 7;
-	//int mask = 0;
-	//short x, y;
-	//int i;
+	for (off = 0; is_pos <= 572 && (maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos <= bit_pos_end; ++is_pos) {
+		while ((v = htab->table[off++]) < 0) {
+			if (bs_readBit(maindata_stream))
+				off -= v;
+		}
 
-	///*
-	// * 2. 使位流缓冲区按字节对齐
-	// */
-	//if (num > 0) {
-	//	mask = bs_readBits(stream, num);
-	//	mask <<= 32 - num;
-	//	part3_len -= num;
-	//}
+		if (v & 0x8 && bs_readBit(maindata_stream))
+			_l3_huff_val[is_pos++] = -1;
+		else _l3_huff_val[is_pos++] = 0;
 
-	///*
-	// * 3. 解码大值区
-	// */
-	//for (i = 0; i < 3; i++) {
-	//	maxidx = region[i];
-	//	htab = ht_bv + cur_ch->table_select[i];
-	//	while (idx < maxidx) {
-	//		if (part3_len + num <= 0) { //检测位流是否有错误
-	//			num -= part3_len + num;
-	//			break;
-	//		}
+		if (is_pos >= 576)
+			break;
 
-	//		while (num < 24) { // refresh mask
-	//			mask |= bs_readBits(stream, 8) << (24 - num);
-	//			num += 8;
-	//			part3_len -= 8;
-	//		}
-	//		tmp = mask;
-	//		y = htab->tab[(tmp >> 30) & 3];
-	//		while (y < 0) {
-	//			tmp <<= 2;
-	//			y = htab->tab[((tmp >> 30) & 3) - y];
-	//		}
-	//		x = (y >> 8) & 0xff; // x暂存hlen
-	//		num -= x;
-	//		mask <<= x;
+		if (v & 0x4 && bs_readBit(maindata_stream))
+			_l3_huff_val[is_pos++] = -1;
+		else _l3_huff_val[is_pos++] = 0;
 
-	//		x = (y >> 4) & 0xf; // 解得x,y
-	//		y &= 0xf;
+		if (is_pos >= 576)
+			break;
 
-	//		if (x != 0) {
-	//			if (x == 15 && htab->linebits != 0) {
-	//				while (num < 24) { // refresh mask
-	//					mask |= bs_readBits(stream, 8) << (24 - num);
-	//					num += 8;
-	//					part3_len -= 8;
-	//				}
-	//				//x += (mask >> (32 - htab->linebits))&; // 循环右移
-	//				x += (mask >> (32 - htab->linebits)) & (0xffffffffU >> (32 - htab->linebits));	// ????? 
-	//				num -= htab->linebits;
-	//				mask <<= htab->linebits;
-	//			}
-	//			_l3_huff_val[idx++] = (mask < 0) ? -x : x;
-	//			--num;
-	//			mask <<= 1;
-	//		} else
-	//			_l3_huff_val[idx++] = 0;
+		if (v & 0x2 && bs_readBit(maindata_stream))
+			_l3_huff_val[is_pos++] = -1;
+		else _l3_huff_val[is_pos++] = 0;
 
-	//		if (y != 0) {
-	//			if (y == 15 && htab->linebits != 0) {
-	//				while (num < 24) { // refresh mask
-	//					mask |= bs_readBits(stream, 8) << (24 - num);
-	//					num += 8;
-	//					part3_len -= 8;
-	//				}
-	//				// y += mask >> (32 - htab->linebits);
-	//				y += (mask >> (32 - htab->linebits)) & (0xffffffffU >> (32 - htab->linebits));	// ??????
-	//				num -= htab->linebits;
-	//				mask <<= htab->linebits;
-	//			}
-	//			_l3_huff_val[idx++] = (mask < 0) ? -y : y;
-	//			--num;
-	//			mask <<= 1;
-	//		} else
-	//			_l3_huff_val[idx++] = 0;
-	//	}
-	//}
+		if (is_pos >= 576)
+			break;
 
-	///*
-	// * 4. 解码count1区
-	// */
-	//htab = ht_c + cur_ch->count1table_select;
-	//while (idx < 572) {
-	//	while (num < 10) { // 6(max hlen) + 4(signed bit)
-	//		mask |= bs_readBits(stream, 8) << (24 - num);
-	//		num += 8;
-	//		part3_len -= 8;
-	//	}
-	//	tmp = mask;
-	//	y = htab->tab[(tmp >> 28) & 0xf];
-	//	while (y < 0) {
-	//		tmp <<= 4;
-	//		y = htab->tab[((tmp >> 28) & 0xf) - y];
-	//	}
+		if (v & 0x1 && bs_readBit(maindata_stream))
+			_l3_huff_val[is_pos] = -1;
+		else _l3_huff_val[is_pos] = 0;
+	}
 
-	//	x = (y >> 8) & 0xff; // hlen
-	//	mask <<= x;
-	//	num -= x;
+	if ((maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos > bit_pos_end + 1) {
+		is_pos -= 4;
+	}
 
-	//	// 修改num后立即检测(当前粒度内的当前声道的)主数据是否处理完，使数据损坏的文件也能继续解码。
-	//	if (part3_len + num <= 0) {
-	//		num -= part3_len + num;
-	//		break;
-	//	}
+	cur_ch->nonzero_len = is_pos;
 
-	//	// 一个码字(hcod)解码得到4个值
-	//	if (/*(y <<= 28) < 0*/ y & 0x8) {
-	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-	//		num--;
-	//		mask <<= 1;
-	//	} else
-	//		_l3_huff_val[idx++] = 0;
-	//	if (/*(y <<= 1) < 0*/ y & 0x4) {
-	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-	//		num--;
-	//		mask <<= 1;
-	//	} else
-	//		_l3_huff_val[idx++] = 0;
-	//	if (/*(y <<= 1) < 0*/ y & 0x2) {
-	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-	//		num--;
-	//		mask <<= 1;
-	//	} else
-	//		_l3_huff_val[idx++] = 0;
-	//	if (/*(y <<= 1) < 0*/ y & 0x1) {
-	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-	//		num--;
-	//		mask <<= 1;
-	//	} else
-	//		_l3_huff_val[idx++] = 0;
-	//}
+	for (; is_pos < 576; ++is_pos) {
+		_l3_huff_val[is_pos] = 0;
+	}
 
-	//if (num > 0) // num位归还到位流缓冲区
-	//	bs_backBits(stream, num);
-
-	///*
-	// * 5. rzone区直接置0,即hv[nonzero..575]=0
-	// */
-	//cur_ch->nonzero_len = idx;
-	//for (; idx < 576; ++idx)
-	//	_l3_huff_val[idx] = 0;
-
-	///*
-	// * 6. 丢弃附属位(ancillary_bit)。附属位不超过多少位？
-	// */
-	//part3_len += num;
-	//if (part3_len > 0)		// 这还不一定是附属位，码流有错误也有可能出现这种情况
-	//	bs_skipBits(stream, part3_len);
-
-	//return cur_ch->nonzero_len;
+	maindata_stream->bit_pos = bit_pos_end & 0x7;
+	maindata_stream->byte_ptr = maindata_stream->bit_buf + (bit_pos_end >> 3);
 }
+
+//static int _l3_huff_val[SBLIMIT * SSLIMIT];
+//static int l3_huffman_decode(struct bitstream* stream, struct l3_sideinfo* si, const int gr, const int ch)
+//{
+//	struct ch_info* cur_ch = &si->info_ch[ch][gr];
+//	int region[4] = { 0 };
+//	int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
+//	int idx = 0;
+//
+//	if (cur_ch->part2_3_len == 0) {
+//		for (; idx < 576; ++idx)
+//			_l3_huff_val[idx] = 0;
+//		return 0;
+//	}
+//
+//	unsigned int mask;
+//	int num = (8 - stream->bit_pos) & 7;
+//	mask = bs_readBits(stream, num) << 24;
+//	mask <<= 8 - num;
+//	part3_len -= num;
+//
+//	{
+//		int r1 = cur_ch->region0_count, r2 = cur_ch->region1_count, bv = cur_ch->big_values;
+//		if (cur_ch->blocksplit_flag) {
+//			r1 = 36;
+//			r2 = 576;
+//		} else {
+//			r1 = cur_ch->region0_count + 1;
+//			r2 = cur_ch->region1_count + 1 + r1;
+//			if (r2 > 22) r2 = 22;
+//			r1 = cur_sfb_table.index_long[r1];
+//			r2 = cur_sfb_table.index_long[r2];
+//		}
+//
+//		if (bv <= r1)
+//			region[0] = region[1] = region[2] = bv;
+//		else {
+//			region[0] = r1;
+//			if (bv <= r2)
+//				region[1] = region[2] = bv;
+//			else {
+//				region[1] = r2;
+//				region[2] = bv;
+//			}
+//		}
+//	}
+//
+//	//int tmp, maxidx, idx = 0;
+//	//const struct huff_tab* htab;
+//
+//	///*
+//	// * 1. 初始化num,mask,part3len
+//	// * mask: 暂存位流缓冲区不超过32比特数据,位流2级缓冲
+//	// * num: mask剩余的比特数
+//	// * part3len: 哈夫曼编码的主数据(main_data)的比特数
+//	// */
+//	//int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
+//	//int num = (8 - stream->bit_pos) & 7;
+//	//int mask = 0;
+//	//short x, y;
+//	//int i;
+//
+//	///*
+//	// * 2. 使位流缓冲区按字节对齐
+//	// */
+//	//if (num > 0) {
+//	//	mask = bs_readBits(stream, num);
+//	//	mask <<= 32 - num;
+//	//	part3_len -= num;
+//	//}
+//
+//	///*
+//	// * 3. 解码大值区
+//	// */
+//	//for (i = 0; i < 3; i++) {
+//	//	maxidx = region[i];
+//	//	htab = ht_bv + cur_ch->table_select[i];
+//	//	while (idx < maxidx) {
+//	//		if (part3_len + num <= 0) { //检测位流是否有错误
+//	//			num -= part3_len + num;
+//	//			break;
+//	//		}
+//
+//	//		while (num < 24) { // refresh mask
+//	//			mask |= bs_readBits(stream, 8) << (24 - num);
+//	//			num += 8;
+//	//			part3_len -= 8;
+//	//		}
+//	//		tmp = mask;
+//	//		y = htab->tab[(tmp >> 30) & 3];
+//	//		while (y < 0) {
+//	//			tmp <<= 2;
+//	//			y = htab->tab[((tmp >> 30) & 3) - y];
+//	//		}
+//	//		x = (y >> 8) & 0xff; // x暂存hlen
+//	//		num -= x;
+//	//		mask <<= x;
+//
+//	//		x = (y >> 4) & 0xf; // 解得x,y
+//	//		y &= 0xf;
+//
+//	//		if (x != 0) {
+//	//			if (x == 15 && htab->linebits != 0) {
+//	//				while (num < 24) { // refresh mask
+//	//					mask |= bs_readBits(stream, 8) << (24 - num);
+//	//					num += 8;
+//	//					part3_len -= 8;
+//	//				}
+//	//				//x += (mask >> (32 - htab->linebits))&; // 循环右移
+//	//				x += (mask >> (32 - htab->linebits)) & (0xffffffffU >> (32 - htab->linebits));	// ????? 
+//	//				num -= htab->linebits;
+//	//				mask <<= htab->linebits;
+//	//			}
+//	//			_l3_huff_val[idx++] = (mask < 0) ? -x : x;
+//	//			--num;
+//	//			mask <<= 1;
+//	//		} else
+//	//			_l3_huff_val[idx++] = 0;
+//
+//	//		if (y != 0) {
+//	//			if (y == 15 && htab->linebits != 0) {
+//	//				while (num < 24) { // refresh mask
+//	//					mask |= bs_readBits(stream, 8) << (24 - num);
+//	//					num += 8;
+//	//					part3_len -= 8;
+//	//				}
+//	//				// y += mask >> (32 - htab->linebits);
+//	//				y += (mask >> (32 - htab->linebits)) & (0xffffffffU >> (32 - htab->linebits));	// ??????
+//	//				num -= htab->linebits;
+//	//				mask <<= htab->linebits;
+//	//			}
+//	//			_l3_huff_val[idx++] = (mask < 0) ? -y : y;
+//	//			--num;
+//	//			mask <<= 1;
+//	//		} else
+//	//			_l3_huff_val[idx++] = 0;
+//	//	}
+//	//}
+//
+//	///*
+//	// * 4. 解码count1区
+//	// */
+//	//htab = ht_c + cur_ch->count1table_select;
+//	//while (idx < 572) {
+//	//	while (num < 10) { // 6(max hlen) + 4(signed bit)
+//	//		mask |= bs_readBits(stream, 8) << (24 - num);
+//	//		num += 8;
+//	//		part3_len -= 8;
+//	//	}
+//	//	tmp = mask;
+//	//	y = htab->tab[(tmp >> 28) & 0xf];
+//	//	while (y < 0) {
+//	//		tmp <<= 4;
+//	//		y = htab->tab[((tmp >> 28) & 0xf) - y];
+//	//	}
+//
+//	//	x = (y >> 8) & 0xff; // hlen
+//	//	mask <<= x;
+//	//	num -= x;
+//
+//	//	// 修改num后立即检测(当前粒度内的当前声道的)主数据是否处理完，使数据损坏的文件也能继续解码。
+//	//	if (part3_len + num <= 0) {
+//	//		num -= part3_len + num;
+//	//		break;
+//	//	}
+//
+//	//	// 一个码字(hcod)解码得到4个值
+//	//	if (/*(y <<= 28) < 0*/ y & 0x8) {
+//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
+//	//		num--;
+//	//		mask <<= 1;
+//	//	} else
+//	//		_l3_huff_val[idx++] = 0;
+//	//	if (/*(y <<= 1) < 0*/ y & 0x4) {
+//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
+//	//		num--;
+//	//		mask <<= 1;
+//	//	} else
+//	//		_l3_huff_val[idx++] = 0;
+//	//	if (/*(y <<= 1) < 0*/ y & 0x2) {
+//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
+//	//		num--;
+//	//		mask <<= 1;
+//	//	} else
+//	//		_l3_huff_val[idx++] = 0;
+//	//	if (/*(y <<= 1) < 0*/ y & 0x1) {
+//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
+//	//		num--;
+//	//		mask <<= 1;
+//	//	} else
+//	//		_l3_huff_val[idx++] = 0;
+//	//}
+//
+//	//if (num > 0) // num位归还到位流缓冲区
+//	//	bs_backBits(stream, num);
+//
+//	///*
+//	// * 5. rzone区直接置0,即hv[nonzero..575]=0
+//	// */
+//	//cur_ch->nonzero_len = idx;
+//	//for (; idx < 576; ++idx)
+//	//	_l3_huff_val[idx] = 0;
+//
+//	///*
+//	// * 6. 丢弃附属位(ancillary_bit)。附属位不超过多少位？
+//	// */
+//	//part3_len += num;
+//	//if (part3_len > 0)		// 这还不一定是附属位，码流有错误也有可能出现这种情况
+//	//	bs_skipBits(stream, part3_len);
+//
+//	//return cur_ch->nonzero_len;
+//}
 
 static void l3_requantize_samples(const struct mpeg_frame* frame, struct l3_sideinfo* si, const int gr, const int ch)
 {
@@ -1104,31 +1365,7 @@ static void imdct36(float pre_block[SBLIMIT * SSLIMIT], float recv[SBLIMIT * SSL
 // static float _samples_pre[2][SBLIMIT * SSLIMIT];
 static void l3_hybrid(struct ch_info* cur_ch, const int ch)
 {
-	int off = 0, block_type/*, sb, i*/;
-	//float output[36];
-	//float sample[18][32];
-
-	//if (cur_ch->block_type != 2 || cur_ch->mixed_block_flag) {
-	//	block_type = cur_ch->block_type;
-	//	if (cur_ch->mixed_block_flag)
-	//		block_type = 0;
-
-	//	for (sb = 0; sb < 2; ++sb, off += 18) {	// long blocks
-	//		l3_imdct_l(samples_in + off, output, block_type);
-	//		for (i = 0; i < 18; ++i) {
-	//			sample[i][sb] = output[i + 0] + overlap[ch][sb][i];
-	//			overlap[ch][sb][i] = output[i + 18];
-	//		}
-	//	}
-	//} else {
-	//	for (sb = 0; sb < 2; ++sb, off += 18) { // short blocks
-	//		l3_imdct_s(samples_in + off, output);
-	//		for (i = 0; i < 18; ++i) {
-	//			sample[i][sb] = output[i + 0] + overlap[ch][sb][i];
-	//			overlap[ch][sb][i] = output[i + 18];
-	//		}
-	//	}
-	//}
+	int off = 0, block_type;
 
 	for (off = 0; off < cur_ch->nonzero_len; off += 18) {
 		block_type = (cur_ch->blocksplit_flag && cur_ch->mixed_block_flag && off < 36) ? 0 : cur_ch->block_type;
@@ -1146,7 +1383,7 @@ static void l3_hybrid(struct ch_info* cur_ch, const int ch)
 	}
 }
 
-void layer3_init(const struct mpeg_header* header)
+void l3_init(const struct mpeg_header* const header)
 {
 	cur_sfb_table.index_long = __sfb_index_long[header->sampling_frequency];
 	cur_sfb_table.index_short = __sfb_index_short[header->sampling_frequency];
@@ -1201,43 +1438,76 @@ void layer3_init(const struct mpeg_header* header)
 	//init_synthesis_tabs();
 }
 
-int l3_decode_samples(const struct bitstream* file_stream, struct bitstream* decode_stream, struct bitstream* maindata_stream, const struct mpeg_frame* frame, unsigned char* pcm_out, unsigned write_ptr[2], const unsigned cur_frame_id)
+static float is[2][2][576];
+int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 {
 	// unsigned char l3_scf[2][39]; // short[13][3], mixed[38], long[22]
 	// static float xr[2][2][SBLIMIT * SSLIMIT];
 
+	const struct mpeg_frame* const cur_frame = &handle->cur_frame;
+	struct bs* const file_stream = handle->file_stream;
+	struct bs* const sideinfo_stream = handle->sideinfo_stream;
+	struct bs* const maindata_stream = handle->maindata_stream;
 	struct l3_sideinfo sideinfo = { 0 };
+	char log_msg_buf[64];
+	
+	sideinfo_stream->byte_ptr = file_stream->byte_ptr;
+	sideinfo_stream->bit_pos = 0;
 
-	decode_stream->bit_reservoir = file_stream->bit_reservoir;
-	decode_stream->bit_pos = 0;
-	decode_stream->byte_ptr = file_stream->byte_ptr;
-
-	if (l3_decode_sideinfo(decode_stream, &sideinfo, frame->nch) == -1) {
-		fprintf(stderr, "[W] frame #%u skipped(decode sideinfo failed)!\n", cur_frame_id);
+	if (l3_decode_sideinfo(sideinfo_stream, &sideinfo, cur_frame->nch) == -1) {
+		sprintf(log_msg_buf, "frame#%u skipped(decode sideinfo failed)!", frame_count);
+		LOG_E("l3_decode_sideinfo", log_msg_buf);
 		return 1;
 	}
 
-	int maindata_len = maindata_stream->end_ptr - maindata_stream->bit_reservoir;
-	if (maindata_len < sideinfo.main_data_begin) {
-		fprintf(stderr, "[W] frame #%u skipped(need more maindata)!\n", cur_frame_id);
-		if (bs_append(maindata_stream, decode_stream->byte_ptr, 0, frame->maindata_size) != frame->maindata_size) {
-			fprintf(stderr, "[E] maindata stream overflow!\n");
-			return -1;
+	memcpy(maindata_stream->bit_buf, maindata_stream->end_ptr - sideinfo.main_data_begin, sideinfo.main_data_begin);
+	maindata_stream->byte_ptr = maindata_stream->bit_buf;
+	maindata_stream->bit_pos = 0;
+	maindata_stream->end_ptr -= sideinfo.main_data_begin;
+
+	if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, sideinfo.main_data_begin, cur_frame->maindata_size) != cur_frame->maindata_size) {
+		sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);
+		LOG_E("bs_Append(maindata_stream)", log_msg_buf);
+		return -1;
+	}
+
+	for (int gr = 0; gr < 2; ++gr) {
+		for (int ch = 0; ch < cur_frame->nch; ++ch) {
+			struct ch_info* const cur_ch = &sideinfo.info_ch[ch][gr];
+			int part2_start = (maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos, bit_pos_end;
+
+			l3_decode_scalefactors(maindata_stream, &sideinfo, gr, ch);
+			l3_huffman_decode(maindata_stream, cur_ch, gr, ch, part2_start + cur_ch->part2_3_len - 1, is[ch][gr]);
+
+			l3_requantize_samples(cur_ch, gr, ch);
 		}
-		return 1;
 	}
 
-	int skip_size = maindata_len - (maindata_stream->byte_ptr - maindata_stream->bit_reservoir) - sideinfo.main_data_begin, ret;
-	// printf("%u <-> %d <-> %d <-> %d <-> %d\n", frame->maindata_size, maindata_len, maindata_stream->byte_ptr - maindata_stream->bit_reservoir, sideinfo->main_data_end, skip_size);
-	if ((ret = bs_skipBytes(maindata_stream, skip_size)) != skip_size) {
-		fprintf(stderr, "[E] frame #%u (bs_skipBytes(%d) returned %d)!\n", cur_frame_id, skip_size, ret);
-		return -1;
-	}
 
-	if (bs_append(maindata_stream, decode_stream->byte_ptr, 0, frame->maindata_size) != frame->maindata_size) {
-		fprintf(stderr, "[E] maindata stream overflow!\n");
-		return -1;
-	}
+
+
+
+	//int maindata_len = maindata_stream->end_ptr - maindata_stream->bit_buf;
+	//if (maindata_len < sideinfo.main_data_begin) {
+	//	fprintf(stderr, "[W] frame#%u skipped(need more maindata)!\n", cur_frame_id);
+	//	if (bs_append(maindata_stream, decode_stream->byte_ptr, 0, frame->maindata_size) != frame->maindata_size) {
+	//		fprintf(stderr, "[E] maindata stream overflow!\n");
+	//		return -1;
+	//	}
+	//	return 1;
+	//}
+
+	//int skip_size = maindata_len - (maindata_stream->byte_ptr - maindata_stream->bit_reservoir) - sideinfo.main_data_begin, ret;
+	//// printf("%u <-> %d <-> %d <-> %d <-> %d\n", frame->maindata_size, maindata_len, maindata_stream->byte_ptr - maindata_stream->bit_reservoir, sideinfo->main_data_end, skip_size);
+	//if ((ret = bs_skipBytes(maindata_stream, skip_size)) != skip_size) {
+	//	fprintf(stderr, "[E] frame #%u (bs_skipBytes(%d) returned %d)!\n", cur_frame_id, skip_size, ret);
+	//	return -1;
+	//}
+
+	//if (bs_append(maindata_stream, decode_stream->byte_ptr, 0, frame->maindata_size) != frame->maindata_size) {
+	//	fprintf(stderr, "[E] maindata stream overflow!\n");
+	//	return -1;
+	//}
 
 	for (int gr = 0; gr < 2; ++gr) {
 		for (int ch = 0; ch < frame->nch; ++ch) {

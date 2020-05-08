@@ -36,6 +36,9 @@
     <ClCompile Include="decoder.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="tag.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="layer3.h">
@@ -45,9 +48,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="huffman.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="synthesis.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="bs.h">
@@ -60,6 +60,15 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="old_huffman.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="tag.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="synth.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="newhuffman.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

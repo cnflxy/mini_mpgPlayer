@@ -1,7 +1,8 @@
-#ifndef __MMP_HUFFMAN_H
+#ifndef _MMP_HUFFMAN_H_
+#define _MMP_HUFFMAN_H_ 1
 
 struct huff_tab {
-	unsigned int linbits;
+	unsigned linbits;
 	const short* table;
 };
 
@@ -300,5 +301,4 @@ static const struct huff_tab htc[] = {
 	{ /* 1 , 1 , */ 0, tab_c1 }
 };
 
-#define __MMP_HUFFMAN_H 1
-#endif // !__MMP_HUFFMAN_H
+#endif // !_MMP_HUFFMAN_H_

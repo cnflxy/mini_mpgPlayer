@@ -150,22 +150,28 @@ int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bs
 	frame->frame_size = !frame->freeformat ? get_frame_size(frame) : 0;
 	frame->sideinfo_size = header->layer == LAYER_3 ? _l3_sideinfo_size[frame->lsf][frame->nch - 1] : 0;
 
+	frame->pcm_size = (frame->lsf ? 2304U : 4608U) >> (frame->nch == 1);
+
 	frame->header_size = 4;
-	if (!header->protection_bit) {
+	if (!header->protection_bit)
 		frame->header_size += 2;
-		bs_skipBytes(bstream, 2);
-	}
 
 	if (!frame->freeformat)
 		frame->maindata_size = frame->frame_size - frame->header_size - frame->sideinfo_size;
 	else frame->maindata_size = 0;
 
-	unsigned need = frame->maindata_size + frame->sideinfo_size, tmp;
-	if ((tmp = bs_Length(bstream)) < need) {
-		need -= tmp;
+	unsigned need = bs_Length(bstream);
+	if (need < frame->frame_size) {
+		need = frame->frame_size - need;
 		if (need != bs_prefect(bstream, need)) {
 			return -1;
 		}
+	}
+
+	if (!header->protection_bit) {
+		frame->crc16_sum = bs_readByte(bstream);
+		frame->crc16_sum <<= 8;
+		frame->crc16_sum |= bs_readByte(bstream);
 	}
 
 	return 0;

@@ -42,6 +42,8 @@ struct mpeg_frame {
 	unsigned header_size;	// Including CRC-16 data
 	unsigned sideinfo_size;
 	unsigned maindata_size;
+
+	unsigned pcm_size;
 };
 
 int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bstream);
