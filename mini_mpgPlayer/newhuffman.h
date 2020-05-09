@@ -2,8 +2,9 @@
 #define _MMP_NEWHUFFMAN_H_ 1
 
 struct huff_tab {
-	unsigned short linbits;
 	const unsigned short* table;
+	const unsigned short linbits;
+	const unsigned short treelen;
 };
 
 static const unsigned short tab0[] = {
@@ -325,44 +326,44 @@ static const unsigned short tab_c1[] = {
 
 
 static const struct huff_tab ht[] = {
-	{ /* 0 */ 0, tab0 },
-	{ /* 2 */ 0, tab1 },
-	{ /* 3 */ 0, tab2 },
-	{ /* 3 */ 0, tab3 },
-	{ /* 0 */ 0, tab0 },
-	{ /* 4 */ 0, tab5 },
-	{ /* 4 */ 0, tab6 },
-	{ /* 6 */ 0, tab7 },
-	{ /* 6 */ 0, tab8 },
-	{ /* 6 */ 0, tab9 },
-	{ /* 8 */ 0, tab10 },
-	{ /* 8 */ 0, tab11 },
-	{ /* 8 */ 0, tab12 },
-	{ /* 16 */ 0, tab13 },
-	{ /* 0  */ 0, tab0 },
-	{ /* 16 */ 0, tab15 },
+	{ tab0, 0, 0 },
+	{ tab1, 0, 7 },
+	{ tab2, 0, 17 },
+	{ tab3, 0, 17 },
+	{ tab0, 0, 0 },
+	{ tab5, 0, 31 },
+	{ tab6, 0, 31 },
+	{ tab7, 0, 71 },
+	{ tab8, 0, 71 },
+	{ tab9, 0, 71 },
+	{ tab10, 0, 127 },
+	{ tab11, 0, 127 },
+	{ tab12, 0, 127 },
+	{ tab13, 0, 511 },
+	{ tab0, 0, 0 },
+	{ tab15, 0, 511 },
 
-	{ /* 16 */ 1, tab16 },
-	{ /* 16 */ 2, tab16 },
-	{ /* 16 */ 3, tab16 },
-	{ /* 16 */ 4, tab16 },
-	{ /* 16 */ 6, tab16 },
-	{ /* 16 */ 8, tab16 },
-	{ /* 16 */ 10, tab16 },
-	{ /* 16 */ 13, tab16 },
-	{ /* 16 */ 4, tab24 },
-	{ /* 16 */ 5, tab24 },
-	{ /* 16 */ 6, tab24 },
-	{ /* 16 */ 7, tab24 },
-	{ /* 16 */ 8, tab24 },
-	{ /* 16 */ 9, tab24 },
-	{ /* 16 */ 11, tab24 },
-	{ /* 16 */ 13, tab24 }
+	{ tab16, 1, 511 },
+	{ tab16, 2, 511 },
+	{ tab16, 3, 511 },
+	{ tab16, 4, 511 },
+	{ tab16, 6, 511 },
+	{ tab16, 8, 511 },
+	{ tab16, 10, 511 },
+	{ tab16, 13, 511 },
+	{ tab24, 4, 512 },
+	{ tab24, 5, 512 },
+	{ tab24, 6, 512 },
+	{ tab24, 7, 512 },
+	{ tab24, 8, 512 },
+	{ tab24, 9, 512 },
+	{ tab24, 11, 512 },
+	{ tab24, 13, 512 }
 };
 
 static const struct huff_tab htc[] = {
-	{ /* 1 , 1 , */ 0, tab_c0 },
-	{ /* 1 , 1 , */ 0, tab_c1 }
+	{ tab_c0, 0, 31 },
+	{ tab_c1, 0, 31 }
 };
 
 #endif // !_MMP_NEWHUFFMAN_H_

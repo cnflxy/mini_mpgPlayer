@@ -75,21 +75,31 @@ unsigned bs_getBitpos(const struct bs* bstream)
 unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 {
 	if (len) {
-		if (len > bs_Capacity(bstream))
-			len = bs_Capacity(bstream);
+		//if (len > bs_Capacity(bstream))
+		//	len = bs_Capacity(bstream);
+
+		//if (len > bs_freeSpace(bstream)) {
+		//	unsigned tmp = bstream->end_ptr - bstream->byte_ptr;
+		//	unsigned need = len - bs_freeSpace(bstream);
+		//	if (need * 2 >= bs_Length(bstream)) {
+		//		memcpy(bstream->end_ptr - need * 2, bstream->end_ptr - need, need);
+		//		bstream->end_ptr -= need;
+		//		bstream->byte_ptr = bstream->end_ptr - tmp;
+		//	} else {
+		//		memcpy(bstream->bit_buf, bstream->end_ptr - need, need);
+		//		bstream->end_ptr = bstream->bit_buf + need;
+		//		bstream->byte_ptr = bstream->end_ptr - tmp;
+		//	}
+
+		//	if (len > bs_freeSpace(bstream))
+		//		len = bs_freeSpace(bstream);
+		//}
 
 		if (len > bs_freeSpace(bstream)) {
-			unsigned tmp = bstream->end_ptr - bstream->byte_ptr;
-			unsigned need = len - bs_freeSpace(bstream);
-			if (need * 2 >= bs_Length(bstream)) {
-				memcpy(bstream->end_ptr - need * 2, bstream->end_ptr - need, need);
-				bstream->end_ptr -= need;
-				bstream->byte_ptr = bstream->end_ptr - tmp;
-			} else {
-				memcpy(bstream->bit_buf, bstream->end_ptr - need, need);
-				bstream->end_ptr = bstream->bit_buf + need;
-				bstream->byte_ptr = bstream->end_ptr - tmp;
-			}
+			memcpy(bstream->bit_buf, bstream->byte_ptr, bs_Avaliable(bstream));
+			bstream->end_ptr = bstream->bit_buf + bs_Avaliable(bstream);
+			bstream->byte_ptr = bstream->bit_buf;
+			bstream->bit_pos = 0;
 
 			if (len > bs_freeSpace(bstream))
 				len = bs_freeSpace(bstream);
@@ -107,7 +117,7 @@ unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 // @@@ byte_pos[0] ___ end_pos ### max_len
 unsigned bs_Prefect(struct bs* bstream, unsigned len)
 {
-	if(len == bs_Append(bstream, NULL, 0, len)) {
+	if (len == bs_Append(bstream, NULL, 0, len)) {
 		len = fread(bstream->end_ptr, 1, len, bstream->file_ptr);
 		bstream->end_ptr += len;
 	}
@@ -117,14 +127,11 @@ unsigned bs_Prefect(struct bs* bstream, unsigned len)
 
 unsigned bs_skipBytes(struct bs* bstream, unsigned nBytes)
 {
-	if (nBytes) {
-		if (bstream->byte_ptr + nBytes > bstream->max_ptr)
-			nBytes = bstream->max_ptr - bstream->byte_ptr;
-		if (nBytes) {
-			bstream->byte_ptr += nBytes;
-			bstream->bit_pos = 0;
-		}
-	}
+	if (nBytes > bs_Avaliable(bstream) + bs_freeSpace(bstream))
+		nBytes = bs_Avaliable(bstream) + bs_freeSpace(bstream);
+
+	bstream->byte_ptr += nBytes;
+	bstream->bit_pos = 0;
 
 	return nBytes;
 }

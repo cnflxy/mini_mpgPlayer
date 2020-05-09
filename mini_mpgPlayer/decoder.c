@@ -112,6 +112,10 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 		}
 	}
 
+	if (handle->output_flags & OUTPUT_FILE) {
+		fwrite("RIFF\ff\ff\ff\ffWAVEfmt \0a\0\0\0\1\0\2\0\44\ac\0\0\a\b1\2\0\4\0\a\0data\ff\ff\ff\d0", 1, 55, handle->wav_ptr);
+	}
+
 	pcm_out->write_off[0] = pcm_out->read_off = 0;
 	pcm_out->write_off[1] = 2;
 	pcm_out->audio_buf_size = cur_frame->pcm_size * 4;
