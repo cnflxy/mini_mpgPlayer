@@ -32,6 +32,7 @@ struct decoder_handle* decoder_Init(const char* const mp3_file_name, const int o
 	} while (0);
 
 	decoder_Release(&handle);
+	return NULL;
 }
 
 void decoder_Release(const struct decoder_handle** const handle)

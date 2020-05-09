@@ -16,8 +16,11 @@ struct bs {
 struct bs* bs_Init(unsigned size, const char* const file_name);
 void bs_Release(struct bs** bstream);
 
+unsigned bs_Avaliable(const struct bs* bstream);
 unsigned bs_Length(const struct bs* bstream);
-int bs_getBitpos(const struct bs* bstream);
+unsigned bs_Capacity(const struct bs* bstream);
+unsigned bs_freeSpace(const struct bs* bstream);
+unsigned bs_getBitpos(const struct bs* bstream);
 
 unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len);
 unsigned bs_Prefect(struct bs* bstream, unsigned len);

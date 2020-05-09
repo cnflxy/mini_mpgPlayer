@@ -24,9 +24,6 @@
     <ClCompile Include="mini_mpgPlayer.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="synthesis.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="bs.c">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -37,6 +34,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="tag.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="synth.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

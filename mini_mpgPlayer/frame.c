@@ -163,7 +163,7 @@ int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bs
 	unsigned need = bs_Length(bstream);
 	if (need < frame->frame_size) {
 		need = frame->frame_size - need;
-		if (need != bs_prefect(bstream, need)) {
+		if (need != bs_Prefect(bstream, need)) {
 			return -1;
 		}
 	}

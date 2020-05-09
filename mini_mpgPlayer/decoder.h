@@ -3,6 +3,7 @@
 
 #include "bs.h"
 #include "frame.h"
+#include "audio.h"
 #include <stdio.h>
 
 #define LOG(_Type, _Func, _Msg) fprintf(stderr, "[%c] %s:%d %s::%s -> %s\n", _Type, __FILE__, __LINE__, __func__, (_Func), (_Msg))
@@ -11,15 +12,6 @@
 #define LOG_I(_Func, _Msg) LOG('I', _Func, _Msg)
 
 enum OUTPUT_FLAGS { OUTPUT_AUDIO = 0x1, OUTPUT_FILE = 0x2 };
-
-struct pcm_stream {
-	unsigned char* pcm_buf;
-	unsigned read_off;
-	unsigned write_off[2]; // {0， 2}
-
-	unsigned audio_buf_size;	// pcm_size * 4， 当内容达到这个值便进行一次处理
-	unsigned pcm_buf_size;	// audio_buf_size * 4，当内容达到这个值便进行复位
-};
 
 struct decoder_handle {
 	struct bs* file_stream;

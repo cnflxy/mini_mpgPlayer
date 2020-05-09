@@ -1,5 +1,6 @@
-#include "synthesis.h"
+#include "synth.h"
 
+#if 0
 static const float dewin[32][16] =
 {
 	{
@@ -924,7 +925,11 @@ void synthesis_subband_filter(const float samples_in[32], unsigned char pcm_out[
 	}
 }
 
-#if 0
+#endif
+
+/*
+coefficients Di for the synthesis window
+*/
 static float _D[512] =
 {
 	0.000000000, -0.000015259, -0.000015259, -0.000015259,
@@ -1057,14 +1062,16 @@ static float _D[512] =
 	0.000015259, 0.000015259, 0.000015259, 0.000015259
 };	// need init ( _D[i] *= 32768 )
 
-static float _V[2][1024];
-static int _V_index[2];
-
+/*
+coefficients Nik for the synthesis window
+*/
 static float _N[64][32]; // need init ( _N[i][k] = cos((16+i)*(2*k+1)*PI/64) )
 // static float _N[32][32]; // need init ( _N[i][k] = cos(i*(2*k+1)*PI/64) )
 
-//static float _U[512];
-static float _W[512];
+static float _U[512];
+
+static float _V[2][1024];
+static int _V_index[2];
 
 static void dct32to64(const float samples_in[32], int ch)
 {
@@ -1108,6 +1115,7 @@ void init_synthesis_tabs(void)
 	//}
 }
 
+#if 0
 /*
 mono:
 pcm_out[0] --> left_lo -\ PCM Sample 1
@@ -1210,64 +1218,61 @@ void synthesis_subband_filter(const float samples_in[32], char pcm_out[32 * 2 * 
 		pcm_out_index[ch] += step;
 	}
 }
+#endif
 
-#include <limits.h>
-void synthesis_full_filter(const float samples_in[32 * 18], unsigned char pcm_out[32 * 18 * 2 * 2], unsigned pcm_out_index[2], int ch, int nch)
+void synthesis_subband_filter(const float xr[32 * 18], struct pcm_stream* const pcm_out, int ch, int nch)
 {
 	int i, j;
 	unsigned step = nch << 1;
+	float s[32], sum;
 
-	for (int s = 0; s < 18; ++s) {
+	for (int ss = 0; ss < 18; ++ss) {
 		// Shifting
 		_V_index[ch] = (_V_index[ch] - 64) & 0x3ff;
 
+		for (i = 0; i < 32; ++i)
+			s[i] = xr[i * 18 + ss];
+
 		// Matrixing (DCT(32 -> 64))
 		for (i = 0; i < 64; ++i) {
-			float t_V = 0.0;
+			sum = 0.0f;
 			for (j = 0; j < 32; ++j) {
-				t_V += _N[i][j] * samples_in[j];
+				sum += _N[i][j] * s[j];
 			}
-			_V[ch][_V_index[ch] + i] = t_V;
+			_V[ch][_V_index[ch] + i] = sum;
 		}
 
 		// Build a 512 values vector U
-		for (i = 0; i < 8; ++i) {
+		for (i = 0; i < 8 * 64; i += 64) {
 			for (j = 0; j < 32; ++j) {
-				_W[i * 64 + j] = _V[ch][i * 128 + j];
-				_W[i * 64 + j + 32] = _V[ch][i * 128 + j + 96];
+				_U[i + j] = _V[ch][i * 2 + j];
+				_U[i + j + 32] = _V[ch][i * 2 + j + 96];
 			}
 		}
 
 		// Window by 512 coefficients
 		for (i = 0; i < 512; ++i) {
-			_W[i] *= _D[i];
+			_U[i] *= _D[i];
 		}
 
 		// Calculate 32 Samples
 		for (i = 0; i < 32; ++i) {
-			float t_S = 0;
-			for (j = 0; j < 512; j += 32) {
-				t_S += _W[i + j];
+			sum = 0.0f;
+			for (j = 0; j < 16 * 32; j += 32) {
+				sum += _U[i + j];
 			}
-			t_S *= 32767.0;
-			//t_S += 32768.0;
 			// Output 32 reconstructed PCM Samples
-			short pcm_i;
-			//if (t_S >= 65535.0) pcm_i = USHRT_MAX;
-			//else if (t_S <= 0.0) pcm_i = 0;
-			//else pcm_i = (unsigned short)t_S;
-			//short pcm_i;
-			if (t_S >= 32767.0) pcm_i = SHRT_MAX;
-			else if (t_S <= -32768.0) pcm_i = SHRT_MIN;
-			else pcm_i = (short)(t_S);
-			// pcm_i >>= 1;
-			//pcm_out[pcm_out_index[ch]] = (char)pcm_i;
-			//pcm_out[pcm_out_index[ch] + 1] = (char)(pcm_i >> 8);
-			/**(short*)(pcm_out + pcm_out_index[ch]) = *(short*)&pcm_i;*/
-			pcm_out[pcm_out_index[ch]] = (unsigned char)pcm_i;
-			pcm_out[pcm_out_index[ch] + 1] = (unsigned char)(pcm_i >> 8);
-			pcm_out_index[ch] += step;
+			int pcm_i = sum * 32767.0f;
+			if (pcm_i > 32767)
+				pcm_i = 32767;
+			else if (pcm_i < -32767) {
+				pcm_i = -32767;
+			}
+			pcm_i &= 0xffff;
+
+			pcm_out->pcm_buf[pcm_out->write_off[ch]] = pcm_i & 0xff;
+			pcm_out->pcm_buf[pcm_out->write_off[ch] + 1] = (pcm_i >> 8) & 0xff;
+			pcm_out->write_off[ch] += step;
 		}
 	}
 }
-#endif

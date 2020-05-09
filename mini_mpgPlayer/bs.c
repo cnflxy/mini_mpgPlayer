@@ -40,6 +40,11 @@ void bs_Release(struct bs** bstream)
 	}
 }
 
+unsigned bs_Avaliable(const struct bs* bstream)
+{
+	return bstream->end_ptr - bstream->byte_ptr;
+}
+
 unsigned bs_Length(const struct bs* bstream)
 {
 	//if (bstream)
@@ -47,24 +52,44 @@ unsigned bs_Length(const struct bs* bstream)
 	//return 0;
 }
 
-int bs_getBitpos(const struct bs* bstream)
+unsigned bs_Capacity(const struct bs* bstream)
+{
+	return bstream->max_ptr - bstream->bit_buf;
+}
+
+unsigned bs_freeSpace(const struct bs* bstream)
+{
+	return bstream->max_ptr - bstream->end_ptr;
+}
+
+unsigned bs_getBitpos(const struct bs* bstream)
 {
 	return bstream->bit_pos;
 }
 
+// bit_buf --> byte_ptr --> end_ptr --> max_ptr
+// 
+
 unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 {
 	if (len) {
-		if (bstream->max_ptr - bstream->end_ptr < len) {
-			unsigned tmp = bs_Length(bstream);
-			if (tmp) {
-				memcpy(bstream->bit_buf, bstream->byte_ptr, tmp);
+		if (len > bs_Capacity(bstream))
+			len = bs_Capacity(bstream);
+
+		if (len > bs_freeSpace(bstream)) {
+			unsigned need = len - bs_freeSpace(bstream);
+			if (need * 2 >= bs_Length(bstream)) {
+				memcpy(bstream->end_ptr - need * 2, bstream->end_ptr - need, need);
+				bstream->end_ptr -= need;
+				bstream->byte_ptr = bstream->end_ptr - need;
+			} else {
+				memcpy(bstream->bit_buf, bstream->end_ptr - need, need);
+				bstream->end_ptr = bstream->bit_buf + need;
 				bstream->byte_ptr = bstream->bit_buf;
-				bstream->end_ptr = bstream->bit_buf + tmp;
 			}
 
-			if (bstream->max_ptr - bstream->end_ptr < len)
-				len = bstream->max_ptr - bstream->end_ptr;
+			if (len > bs_freeSpace(bstream))
+				len = bs_freeSpace(bstream);
 		}
 
 		if (src && len) {

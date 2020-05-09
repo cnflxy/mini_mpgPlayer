@@ -154,7 +154,7 @@
     <ClCompile Include="frame.c" />
     <ClCompile Include="layer3.c" />
     <ClCompile Include="mini_mpgPlayer.c" />
-    <ClCompile Include="synthesis.c" />
+    <ClCompile Include="synth.c" />
     <ClCompile Include="tag.c" />
   </ItemGroup>
   <ItemGroup>

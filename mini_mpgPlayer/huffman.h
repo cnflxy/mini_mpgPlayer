@@ -301,4 +301,66 @@ static const struct huff_tab htc[] = {
 	{ /* 1 , 1 , */ 0, tab_c1 }
 };
 
+#if 0
+while ((y = htab->table[off++]) < 0) {
+	if (bs_readBit(maindata_stream))
+		off -= y;
+}
+
+x = y >> 4;
+y &= 0xf;
+
+if (x == 15 && htab->linbits) {
+	x += bs_readBits(maindata_stream, htab->linbits);
+	if (x > 0 && bs_readBit(maindata_stream))
+		x = -x;
+} else if (x) {
+	if (x > 0 && bs_readBit(maindata_stream))
+		x = -x;
+}
+_l3_huff_val[is_pos++] = x;
+
+if (y == 15 && htab->linbits) {
+	y += bs_readBits(maindata_stream, htab->linbits);
+	if (y > 0 && bs_readBit(maindata_stream))
+		y = -y;
+} else if (y) {
+	if (y > 0 && bs_readBit(maindata_stream))
+		y = -y;
+}
+_l3_huff_val[is_pos] = y;
+#endif
+
+#if 0
+while ((v = htab->table[off++]) < 0) {
+	if (bs_readBit(maindata_stream))
+		off -= v;
+}
+
+if (v & 0x8 && bs_readBit(maindata_stream))
+_l3_huff_val[is_pos++] = -1;
+else _l3_huff_val[is_pos++] = 0;
+
+if (is_pos >= 576)
+break;
+
+if (v & 0x4 && bs_readBit(maindata_stream))
+_l3_huff_val[is_pos++] = -1;
+else _l3_huff_val[is_pos++] = 0;
+
+if (is_pos >= 576)
+break;
+
+if (v & 0x2 && bs_readBit(maindata_stream))
+_l3_huff_val[is_pos++] = -1;
+else _l3_huff_val[is_pos++] = 0;
+
+if (is_pos >= 576)
+break;
+
+if (v & 0x1 && bs_readBit(maindata_stream))
+_l3_huff_val[is_pos] = -1;
+else _l3_huff_val[is_pos] = 0;
+#endif
+
 #endif // !_MMP_HUFFMAN_H_

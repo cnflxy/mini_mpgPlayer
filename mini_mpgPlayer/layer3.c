@@ -1,5 +1,6 @@
 #include "layer3.h"
-#include "huffman.h"
+#include "newhuffman.h"
+#include "synth.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -77,7 +78,7 @@ c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037}
 cs[i] = 1 / sqrt(1 + c[i]^2)
 ca[i] = c[i] / sqrt(1 + c[i]^2)
 */
-static const float __c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037 };
+static const double __c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037 };
 static float cs[8], ca[8];
 
 /*
@@ -86,16 +87,12 @@ IMDCT coefficients for short blocks and long blocks
 imdct_s[i][k] = cos(PI * (2 * i + 7) * (2 * k + 1) / 24) = cos(PI * (i + 3.5) * (k + 0.5) / 12)
 imdct_l[i][k] = cos(PI * (2 * i + 19) * (2 * k + 1) / 72) = cos(PI * (i + 9.5) * (k + 0.5) / 36)
 */
-static float imdct_s[12][6];
-static float imdct_l[36][18];
+static float imdct_s[6][12];
+static float imdct_l[18][36];
 
-/*
-windowing coefficients for long blocks
+static float imdct_window[4][36];
 
-window_l[i] = sin(PI * (i + 1/2) / 36) = sin(PI * (2 * i + 1) / 72)
-*/
-static float window_l[36];
-
+#if 0
 /*
 windowing coefficients for short blocks
 
@@ -104,211 +101,87 @@ window_s[i] = sin(PI * (i + 1/2) / 12) = sin(PI * (2 * i + 1) / 24)
 static float window_s[12];
 
 /*
+windowing coefficients for long blocks
+
+window_l[i] = sin(PI * (i + 1/2) / 36) = sin(PI * (2 * i + 1) / 72)
+*/
+static float window_l[36];
+#endif
+
+/*
 coefficients for intensity stereo processing
 
 is_ratio[i] = tan(i * (PI / 12))
 is_table[i] = is_ratio[i] / (1 + is_ratio[i])
 */
-static float is_table[7];
+static float is_ratio[6];
+//static float is_table[7];
 
-/*
-coefficients Di for the synthesis window
-*/
-static float _D[] =
+
+static float overlapp[2][SBLIMIT * SSLIMIT];
+
+
+static int l3_decode_sideinfo(struct bs* const sideinfo_stream, struct l3_sideinfo* const si, const int nch)
 {
-	0.000000000, -0.000015259, -0.000015259, -0.000015259,
-	-0.000015259, -0.000015259, -0.000015259, -0.000030518,
-	-0.000030518, -0.000030518, -0.000030518, -0.000045776,
-	-0.000045776, -0.000061035, -0.000061035, -0.000076294,
-	-0.000076294, -0.000091553, -0.000106812, -0.000106812,
-	-0.000122070, -0.000137329, -0.000152588, -0.000167847,
-	-0.000198364, -0.000213623, -0.000244141, -0.000259399,
-	-0.000289917, -0.000320435, -0.000366211, -0.000396729,
-	-0.000442505, -0.000473022, -0.000534058, -0.000579834,
-	-0.000625610, -0.000686646, -0.000747681, -0.000808716,
-	-0.000885010, -0.000961304, -0.001037598, -0.001113892,
-	-0.001205444, -0.001296997, -0.001388550, -0.001480103,
-	-0.001586914, -0.001693726, -0.001785278, -0.001907349,
-	-0.002014160, -0.002120972, -0.002243042, -0.002349854,
-	-0.002456665, -0.002578735, -0.002685547, -0.002792358,
-	-0.002899170, -0.002990723, -0.003082275, -0.003173828,
-	0.003250122, 0.003326416, 0.003387451, 0.003433228,
-	0.003463745, 0.003479004, 0.003479004, 0.003463745,
-	0.003417969, 0.003372192, 0.003280640, 0.003173828,
-	0.003051758, 0.002883911, 0.002700806, 0.002487183,
-	0.002227783, 0.001937866, 0.001617432, 0.001266479,
-	0.000869751, 0.000442505, -0.000030518, -0.000549316,
-	-0.001098633, -0.001693726, -0.002334595, -0.003005981,
-	-0.003723145, -0.004486084, -0.005294800, -0.006118774,
-	-0.007003784, -0.007919312, -0.008865356, -0.009841919,
-	-0.010848999, -0.011886597, -0.012939453, -0.014022827,
-	-0.015121460, -0.016235352, -0.017349243, -0.018463135,
-	-0.019577026, -0.020690918, -0.021789551, -0.022857666,
-	-0.023910522, -0.024932861, -0.025909424, -0.026840210,
-	-0.027725220, -0.028533936, -0.029281616, -0.029937744,
-	-0.030532837, -0.031005859, -0.031387329, -0.031661987,
-	-0.031814575, -0.031845093, -0.031738281, -0.031478882,
-	0.031082153, 0.030517578, 0.029785156, 0.028884888,
-	0.027801514, 0.026535034, 0.025085449, 0.023422241,
-	0.021575928, 0.019531250, 0.017257690, 0.014801025,
-	0.012115479, 0.009231567, 0.006134033, 0.002822876,
-	-0.000686646, -0.004394531, -0.008316040, -0.012420654,
-	-0.016708374, -0.021179199, -0.025817871, -0.030609131,
-	-0.035552979, -0.040634155, -0.045837402, -0.051132202,
-	-0.056533813, -0.061996460, -0.067520142, -0.073059082,
-	-0.078628540, -0.084182739, -0.089706421, -0.095169067,
-	-0.100540161, -0.105819702, -0.110946655, -0.115921021,
-	-0.120697021, -0.125259399, -0.129562378, -0.133590698,
-	-0.137298584, -0.140670776, -0.143676758, -0.146255493,
-	-0.148422241, -0.150115967, -0.151306152, -0.151962280,
-	-0.152069092, -0.151596069, -0.150497437, -0.148773193,
-	-0.146362305, -0.143264771, -0.139450073, -0.134887695,
-	-0.129577637, -0.123474121, -0.116577148, -0.108856201,
-	0.100311279, 0.090927124, 0.080688477, 0.069595337,
-	0.057617187, 0.044784546, 0.031082153, 0.016510010,
-	0.001068115, -0.015228271, -0.032379150, -0.050354004,
-	-0.069168091, -0.088775635, -0.109161377, -0.130310059,
-	-0.152206421, -0.174789429, -0.198059082, -0.221984863,
-	-0.246505737, -0.271591187, -0.297210693, -0.323318481,
-	-0.349868774, -0.376800537, -0.404083252, -0.431655884,
-	-0.459472656, -0.487472534, -0.515609741, -0.543823242,
-	-0.572036743, -0.600219727, -0.628295898, -0.656219482,
-	-0.683914185, -0.711318970, -0.738372803, -0.765029907,
-	-0.791213989, -0.816864014, -0.841949463, -0.866363525,
-	-0.890090942, -0.913055420, -0.935195923, -0.956481934,
-	-0.976852417, -0.996246338, -1.014617920, -1.031936646,
-	-1.048156738, -1.063217163, -1.077117920, -1.089782715,
-	-1.101211548, -1.111373901, -1.120223999, -1.127746582,
-	-1.133926392, -1.138763428, -1.142211914, -1.144287109,
-	1.144989014, 1.144287109, 1.142211914, 1.138763428,
-	1.133926392, 1.127746582, 1.120223999, 1.111373901,
-	1.101211548, 1.089782715, 1.077117920, 1.063217163,
-	1.048156738, 1.031936646, 1.014617920, 0.996246338,
-	0.976852417, 0.956481934, 0.935195923, 0.913055420,
-	0.890090942, 0.866363525, 0.841949463, 0.816864014,
-	0.791213989, 0.765029907, 0.738372803, 0.711318970,
-	0.683914185, 0.656219482, 0.628295898, 0.600219727,
-	0.572036743, 0.543823242, 0.515609741, 0.487472534,
-	0.459472656, 0.431655884, 0.404083252, 0.376800537,
-	0.349868774, 0.323318481, 0.297210693, 0.271591187,
-	0.246505737, 0.221984863, 0.198059082, 0.174789429,
-	0.152206421, 0.130310059, 0.109161377, 0.088775635,
-	0.069168091, 0.050354004, 0.032379150, 0.015228271,
-	-0.001068115, -0.016510010, -0.031082153, -0.044784546,
-	-0.057617187, -0.069595337, -0.080688477, -0.090927124,
-	0.100311279, 0.108856201, 0.116577148, 0.123474121,
-	0.129577637, 0.134887695, 0.139450073, 0.143264771,
-	0.146362305, 0.148773193, 0.150497437, 0.151596069,
-	0.152069092, 0.151962280, 0.151306152, 0.150115967,
-	0.148422241, 0.146255493, 0.143676758, 0.140670776,
-	0.137298584, 0.133590698, 0.129562378, 0.125259399,
-	0.120697021, 0.115921021, 0.110946655, 0.105819702,
-	0.100540161, 0.095169067, 0.089706421, 0.084182739,
-	0.078628540, 0.073059082, 0.067520142, 0.061996460,
-	0.056533813, 0.051132202, 0.045837402, 0.040634155,
-	0.035552979, 0.030609131, 0.025817871, 0.021179199,
-	0.016708374, 0.012420654, 0.008316040, 0.004394531,
-	0.000686646, -0.002822876, -0.006134033, -0.009231567,
-	-0.012115479, -0.014801025, -0.017257690, -0.019531250,
-	-0.021575928, -0.023422241, -0.025085449, -0.026535034,
-	-0.027801514, -0.028884888, -0.029785156, -0.030517578,
-	0.031082153, 0.031478882, 0.031738281, 0.031845093,
-	0.031814575, 0.031661987, 0.031387329, 0.031005859,
-	0.030532837, 0.029937744, 0.029281616, 0.028533936,
-	0.027725220, 0.026840210, 0.025909424, 0.024932861,
-	0.023910522, 0.022857666, 0.021789551, 0.020690918,
-	0.019577026, 0.018463135, 0.017349243, 0.016235352,
-	0.015121460, 0.014022827, 0.012939453, 0.011886597,
-	0.010848999, 0.009841919, 0.008865356, 0.007919312,
-	0.007003784, 0.006118774, 0.005294800, 0.004486084,
-	0.003723145, 0.003005981, 0.002334595, 0.001693726,
-	0.001098633, 0.000549316, 0.000030518, -0.000442505,
-	-0.000869751, -0.001266479, -0.001617432, -0.001937866,
-	-0.002227783, -0.002487183, -0.002700806, -0.002883911,
-	-0.003051758, -0.003173828, -0.003280640, -0.003372192,
-	-0.003417969, -0.003463745, -0.003479004, -0.003479004,
-	-0.003463745, -0.003433228, -0.003387451, -0.003326416,
-	0.003250122, 0.003173828, 0.003082275, 0.002990723,
-	0.002899170, 0.002792358, 0.002685547, 0.002578735,
-	0.002456665, 0.002349854, 0.002243042, 0.002120972,
-	0.002014160, 0.001907349, 0.001785278, 0.001693726,
-	0.001586914, 0.001480103, 0.001388550, 0.001296997,
-	0.001205444, 0.001113892, 0.001037598, 0.000961304,
-	0.000885010, 0.000808716, 0.000747681, 0.000686646,
-	0.000625610, 0.000579834, 0.000534058, 0.000473022,
-	0.000442505, 0.000396729, 0.000366211, 0.000320435,
-	0.000289917, 0.000259399, 0.000244141, 0.000213623,
-	0.000198364, 0.000167847, 0.000152588, 0.000137329,
-	0.000122070, 0.000106812, 0.000106812, 0.000091553,
-	0.000076294, 0.000076294, 0.000061035, 0.000061035,
-	0.000045776, 0.000045776, 0.000030518, 0.000030518,
-	0.000030518, 0.000030518, 0.000015259, 0.000015259,
-	0.000015259, 0.000015259, 0.000015259, 0.000015259
-};	// need init ( _D[i] *= 32768 )
+	int gr, ch, region;
+	char log_msg_buf[64];
 
-/*
-coefficients Nik for the synthesis window
-*/
-static float _N[64][32]; // need init ( _N[i][k] = cos((16+i)*(2*k+1)*PI/64) )
-// static float _N[32][32]; // need init ( _N[i][k] = cos(i*(2*k+1)*PI/64) )
+	si->main_data_begin = bs_readBits(sideinfo_stream, 9);
+	si->private_bits = bs_readBits(sideinfo_stream, nch == 1 ? 5 : 3);	// private_bits
 
-static float _V[2][1024];
-static int _V_index[2];
-
-float buf[2][32 * 18];
-
-static int l3_decode_sideinfo(struct bitstream* decode_stream, struct l3_sideinfo* si, const int nch)
-{
-	int gr, ch;
-
-	si->main_data_begin = bs_readBits(decode_stream, 9);
-	si->private_bits = bs_readBits(decode_stream, nch == 1 ? 5 : 3);	// private_bits
-
-	for (ch = 0; ch < nch; ++ch)
-		si->scfsi[ch] = bs_readBits(decode_stream, 4);
+	for (ch = 0; ch < nch; ++ch) {
+		for (int scfsi_band = 0; scfsi_band < 4; ++scfsi_band)
+			si->scfsi[ch][scfsi_band] = bs_readBit(sideinfo_stream);
+	}
 
 	for (gr = 0; gr < 2; ++gr) {
 		for (ch = 0; ch < nch; ++ch) {
-			struct ch_info* cur_ch = &si->info_ch[ch][gr];
+			struct ch_info* const cur_ch = si->gr[gr].ch + ch;
 
-			cur_ch->part2_3_len = bs_readBits(decode_stream, 12);
+			cur_ch->part2_3_len = bs_readBits(sideinfo_stream, 12);
+			if (cur_ch->part2_3_len == 0) {
+				sprintf(log_msg_buf, "gr%dch%d's part2_3_len==0!", gr, ch);
+				LOG_W("sideinfo_check", log_msg_buf);
+			}
 
-			cur_ch->big_values = bs_readBits(decode_stream, 9);
+			cur_ch->big_values = bs_readBits(sideinfo_stream, 9);
 			if (cur_ch->big_values > 288) {
-				fprintf(stderr, "[W] big_values==%u too large!\n", cur_ch->big_values);
+				sprintf(log_msg_buf, "gr%dch%d's big_values==%hu too large!", gr, ch, cur_ch->big_values);
+				LOG_W("sideinfo_check", log_msg_buf);
 				cur_ch->big_values = 288;
 			}
 
-			cur_ch->global_gain = bs_readBits(decode_stream, 8);
-
-			cur_ch->scalefac_compress = bs_readBits(decode_stream, 4);
+			cur_ch->global_gain = bs_readBits(sideinfo_stream, 8);
+			cur_ch->scalefac_compress = bs_readBits(sideinfo_stream, 4);
 			if (cur_ch->part2_3_len == 0) {
 				if (cur_ch->scalefac_compress) {
-					fprintf(stderr, "[W] scalefac_compress==%u when part2_3_len==0!\n", cur_ch->scalefac_compress);
+					sprintf(log_msg_buf, "gr%dch%d's scalefac_compress==%hu when part2_3_len==0!", gr, ch, cur_ch->scalefac_compress);
+					LOG_W("sideinfo_check", log_msg_buf);
 					cur_ch->scalefac_compress = 0;
 				}
 			}
 
-			cur_ch->win_switch_flag = bs_readBit(decode_stream);
+			cur_ch->win_switch_flag = bs_readBit(sideinfo_stream);
 			if (cur_ch->win_switch_flag == 1) {
-				cur_ch->block_type = bs_readBits(decode_stream, 2);
-
+				cur_ch->block_type = bs_readBits(sideinfo_stream, 2);
 				if (cur_ch->block_type == 0) {
-					fprintf(stderr, "[E] block_type==0 when blocksplit_flag==1!\n");
+					LOG_E("sideinfo_check", "block_type==0 when win_switch_flag==1!");
 					return -1;
-				} else if (cur_ch->block_type == 2 && si->scfsi[ch]) {
-					fprintf(stderr, "[E] block_type==2 when scfsi!=0!\n");
+				} else if (cur_ch->block_type == 2 && *(unsigned*)(si->scfsi[ch]) != 0) {
+					LOG_E("sideinfo_check", "block_type==2 when scfsi!=0!");
 					return -1;
 				}
 
-				cur_ch->mixed_block_flag = bs_readBit(decode_stream);
+				cur_ch->mixed_block_flag = bs_readBit(sideinfo_stream);
+				if (cur_ch->block_type == 2 && cur_ch->mixed_block_flag == 1) {
+					LOG_W("sideinfo_check", "block_type==2 when mixed_block_flag==1!");
+				}
 
-				for (int region = 0; region < 2; ++region)
-					cur_ch->table_select[region] = bs_readBits(decode_stream, 5);
+				for (region = 0; region < 2; ++region)
+					cur_ch->table_select[region] = bs_readBits(sideinfo_stream, 5);
 				cur_ch->table_select[2] = 0;
-
 				for (int window = 0; window < 3; ++window)
-					cur_ch->subblock_gain[window] = bs_readBits(decode_stream, 3);
+					cur_ch->subblock_gain[window] = bs_readBits(sideinfo_stream, 3);
 
 				if (cur_ch->block_type == 2 && cur_ch->mixed_block_flag == 0)
 					cur_ch->region0_count = 8;
@@ -318,628 +191,646 @@ static int l3_decode_sideinfo(struct bitstream* decode_stream, struct l3_sideinf
 				//cur_ch->region0_count = 36 >> 1;
 				//cur_ch->region1_count = 576 >> 1;
 			} else {
-				for (int region = 0; region < 3; ++region)
-					cur_ch->table_select[region] = bs_readBits(decode_stream, 5);
+				cur_ch->block_type = 0;
+				cur_ch->mixed_block_flag = 0;
+
+				for (region = 0; region < 3; ++region)
+					cur_ch->table_select[region] = bs_readBits(sideinfo_stream, 5);
 
 				//int r1 = bs_readBits(decode_stream, 4) + 1, r2 = bs_readBits(decode_stream, 3) + 1;
 				//cur_ch->region0_count = cur_sfb_table.index_long[r1] >> 1;
 				//if (r1 + r2 > 22)
 				//	cur_ch->region1_count = 576 >> 1;
 				//else cur_ch->region1_count = cur_sfb_table.index_long[r1 + r2] >> 1;
-				cur_ch->region0_count = bs_readBits(decode_stream, 4);
-				cur_ch->region1_count = bs_readBits(decode_stream, 3);
 
-				cur_ch->block_type = 0;
-				cur_ch->mixed_block_flag = 0;
+				cur_ch->region0_count = bs_readBits(sideinfo_stream, 4);
+				cur_ch->region1_count = bs_readBits(sideinfo_stream, 3);
 			}
-			cur_ch->preflag = bs_readBit(decode_stream);
-			cur_ch->scalefac_scale = bs_readBit(decode_stream);
-			cur_ch->count1table_select = bs_readBit(decode_stream);
+			cur_ch->preflag = bs_readBit(sideinfo_stream);
+			cur_ch->scalefac_scale = bs_readBit(sideinfo_stream);
+			cur_ch->count1table_select = bs_readBit(sideinfo_stream);
 		}
 	}
 
 	return 0;
 }
 
-static void l3_decode_scalefactors(struct bitstream* stream, struct l3_sideinfo* si, const int gr, const int ch)
+static void l3_decode_scalefactors(struct bs* const maindata_stream, struct ch_info* const cur_ch, const struct l3_sideinfo* const si, const int gr, const int ch)
 {
-	struct ch_info* cur_ch = &si->info_ch[ch][gr];
 	const unsigned char slen0 = sflen_table[0][cur_ch->scalefac_compress];
 	const unsigned char slen1 = sflen_table[1][cur_ch->scalefac_compress];
-	int sfi;
+	int sb;
 
 	if (cur_ch->part2_3_len == 0) {
-		for (sfi = 0; sfi < 21; ++sfi) {
-			cur_ch->scalefac_l[sfi] = 0;
-			cur_ch->scalefac_s[sfi] = 0;
+		for (sb = 0; sb < 21; ++sb) {
+			cur_ch->scalefac_l[sb] = 0;
+			cur_ch->scalefac_s[sb] = 0;
 		}
-		for (sfi = 23; sfi < 36; ++sfi)
-			cur_ch->scalefac_s[sfi];
+		for (sb = 23; sb < 36; ++sb)
+			cur_ch->scalefac_s[sb] = 0;
+		cur_ch->part2_len = 0;
 		return;
 	}
 
 	if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
 		if (cur_ch->mixed_block_flag == 1) {
 			// MIXED block
-			// cur_ch->part2_len = 17 * slen1 + 18 * slen0;
-			for (sfi = 0; sfi < 8; ++sfi)
-				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen0);
-
-			for (sfi = 3; sfi < 12; ++sfi) {
-				unsigned nbits = sfi < 6 ? slen0 : slen1;
-				for (int win = 0; win < 3; ++win)
-					cur_ch->scalefac_s[sfi * 3 + win] = bs_readBits(stream, nbits);
-			}
+			cur_ch->part2_len = slen0 * 17 + slen1 * 18;
+			for (sb = 0; sb < 8; ++sb)
+				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
+			for (sb = 9; sb < 18; ++sb)
+				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen0);
+			for (sb = 18; sb < 36; ++sb)
+				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen1);
 		} else {
 			// pure SHORT block
-			// cur_ch->part2_len = 18 * (slen0 + slen1);
-			for (sfi = 0; sfi < 12; ++sfi) {
-				unsigned nbits = sfi < 6 ? slen0 : slen1;
-				for (int win = 0; win < 3; ++win)
-					cur_ch->scalefac_s[sfi * 3 + win] = bs_readBits(stream, nbits);
-			}
+			cur_ch->part2_len = (slen0 + slen1) * 18;
+			for (sb = 0; sb < 18; ++sb)
+				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen0);
+			for (sb = 18; sb < 36; ++sb)
+				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen1);
 		}
 	} else {
 		// LONG types 0,1,3
-
+		cur_ch->part2_len = 0;
 		/* Scale factor bands 0-5 */
-		if (!(si->scfsi[ch] & 0x8) || !gr) {
-			for (sfi = 0; sfi < 6; ++sfi)
-				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen0);
-		} else if ((si->scfsi[ch] & 0x8) && gr) {
+		if (si->scfsi[ch][0] == 0 || gr == 0) {
+			for (sb = 0; sb < 6; ++sb)
+				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
+			cur_ch->part2_len += slen0 * 6;
+		} else {
 			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sfi = 0; sfi < 6; ++sfi)
-				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
+			for (sb = 0; sb < 6; ++sb)
+				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
 
 		/* Scale factor bands 6-10 */
-		if (!(si->scfsi[ch] & 0x4) || !gr) {
-			for (sfi = 6; sfi < 11; ++sfi) {
-				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen0);
-			}
-		} else if ((si->scfsi[ch] & 0x4) && gr) {
+		if (si->scfsi[ch][1] == 0 || gr == 0) {
+			for (sb = 6; sb < 11; ++sb)
+				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
+			cur_ch->part2_len += slen0 * 5;
+		} else {
 			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sfi = 6; sfi < 11; ++sfi) {
-				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
-			}
+			for (sb = 6; sb < 11; ++sb)
+				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
 
 		/* Scale factor bands 11-15 */
-		if (!(si->scfsi[ch] & 0x2) || !gr) {
-			for (sfi = 11; sfi < 16; ++sfi) {
-				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen1);
-			}
-		} else if ((si->scfsi[ch] & 0x2) && gr) {
+		if (si->scfsi[ch][2] == 0 || gr == 0) {
+			for (sb = 11; sb < 16; ++sb)
+				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen1);
+			cur_ch->part2_len += slen1 * 5;
+		} else {
 			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sfi = 11; sfi < 16; ++sfi) {
-				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
-			}
+			for (sb = 11; sb < 16; ++sb)
+				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
 
 		/* Scale factor bands 16-20 */
-		if (!(si->scfsi[ch] & 0x1) || !gr) {
-			for (sfi = 16; sfi < 21; ++sfi) {
-				cur_ch->scalefac_l[sfi] = bs_readBits(stream, slen1);
-			}
-		} else if ((si->scfsi[ch] & 0x1) && gr) {
+		if (si->scfsi[ch][3] == 0 || gr == 0) {
+			for (sb = 16; sb < 21; ++sb)
+				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen1);
+			cur_ch->part2_len += slen1 * 5;
+		} else {
 			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sfi = 16; sfi < 21; ++sfi) {
-				cur_ch->scalefac_l[sfi] = si->info_ch[ch][0].scalefac_l[sfi];
-			}
+			for (sb = 16; sb < 21; ++sb)
+				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
 	}
 }
 
-static int _l3_huff_val[SBLIMIT * SSLIMIT];
-static void l3_huffman_decode(struct bs* maindata_stream, struct ch_info *cur_ch, int gr, int ch, int bit_pos_end, float is[576])
+static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* const cur_ch, short is[SBLIMIT * SSLIMIT])
 {
-	int region1_start, region2_start, is_pos, bv = cur_ch->big_values * 2;
+	int region[3], r, is_pos = 0, bv = cur_ch->big_values * 2, part3_len = 0;
 	const struct huff_tab* htab;
-	unsigned mask;
-	int x, y, v, i, off = 0, tmp, idx = 0;
+	unsigned /*mask, */point, bitleft;
+	short huff_code[4];
+	//int x, y, v, i, off = 0, tmp, idx = 0;
+	//struct bs start = { .byte_ptr = maindata_stream->byte_ptr, .bit_pos = maindata_stream->bit_pos };
 
 	if (cur_ch->part2_3_len == 0) {
-		LOG_W("check_len", "part2_3_len == 0");
 		for (is_pos = 0; is_pos < 576; ++is_pos)
-			_l3_huff_val[is_pos] = 0;
+			is[is_pos] = 0;
 		cur_ch->nonzero_len = 0;
 		return;
 	}
 
-	//int num = (8 - maindata_stream->bit_pos) & 7;
-	//mask = bs_readBits(maindata_stream, num) << 24;
-	//mask <<= 8 - num;
+	if (cur_ch->part2_3_len != 0) {
+		part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
 
-	if (cur_ch->win_switch_flag && cur_ch->block_type == 2) {
-		region1_start = 36;
-		region2_start = 576;
-	} else {
-		region1_start = cur_sfb_table.index_long[cur_ch->region0_count + 1];
-		region2_start = cur_sfb_table.index_long[cur_ch->region0_count + region1_start + 2];
+		{
+			if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
+				region[0] = 36;
+				region[1] = 576 - 2;
+			} else {
+				int r1 = cur_ch->region0_count + 1, r2 = r1 + cur_ch->region1_count + 1;
+				if (r2 > 22) r2 = 22;
+				region[0] = cur_sfb_table.index_long[r1];
+				region[1] = cur_sfb_table.index_long[r2];
+			}
+
+			if (bv <= region[0])
+				region[0] = region[1] = bv > 574 ? 574 : bv;
+			else if (bv <= region[1])
+				region[1] = bv > 574 ? 574 : bv;
+			region[2] = bv > 574 ? 574 : bv;
+		}
+
+		// 解码大值区
+		for (r = is_pos = 0; r < 3; ++r) {
+			htab = ht + cur_ch->table_select[r];
+			for (; is_pos < region[r] && part3_len > 0; ++is_pos) {
+				point = bitleft = 0;
+				huff_code[0] = huff_code[1] = huff_code[2] = huff_code[3] = 0;
+				do {
+					if ((htab->table[point] & 0xff00) == 0) {
+						huff_code[0] = (htab->table[point] >> 4) & 0xf;
+						huff_code[1] = htab->table[point] & 0xf;
+						break;
+					}
+
+					if (bs_readBit(maindata_stream) == 1) { /* goto right-child*/
+						while ((htab->table[point] & 0xff) >= 250)
+							point += htab->table[point] & 0xff;
+						point += htab->table[point] & 0xff;
+					} else { /* goto left-child*/
+						while (htab->table[point] >> 8 >= 250)
+							point += htab->table[point] >> 8;
+						point += htab->table[point] >> 8;
+					}
+					--part3_len;
+				} while (++bitleft < 32 && part3_len > 0);
+				if (part3_len == 0)
+					break;
+
+				// get linbits
+				if (htab->linbits > 0 && huff_code[0] == 15) {
+					if (part3_len < htab->linbits)
+						break;
+					huff_code[0] += bs_readBits(maindata_stream, htab->linbits);
+					part3_len -= htab->linbits;
+					if (part3_len == 0)
+						break;
+				}
+				// get sign bit
+				if (huff_code[0] > 0) {
+					if (bs_readBit(maindata_stream) == 1)
+						huff_code[0] = -huff_code[0];
+					--part3_len;
+					if (part3_len == 0)
+						break;
+				}
+				is[is_pos++] = huff_code[0];
+
+				// get linbits
+				if (htab->linbits > 0 && huff_code[1] == 15) {
+					if (part3_len < htab->linbits)
+						break;
+					huff_code[1] += bs_readBits(maindata_stream, htab->linbits);
+					part3_len -= htab->linbits;
+					if (part3_len == 0)
+						break;
+				}
+				// get sign bit
+				if (huff_code[1] > 0) {
+					if (bs_readBit(maindata_stream) == 1)
+						huff_code[1] = -huff_code[1];
+					--part3_len;
+					if (part3_len == 0)
+						break;
+				}
+				is[is_pos] = huff_code[1];
+			}
+		}
+
+		// 解码小值区
+		htab = htc + cur_ch->count1table_select;
+		for (; is_pos <= 572 && part3_len > 0; ++is_pos) {
+			point = bitleft = 0;
+			huff_code[0] = huff_code[1] = huff_code[2] = huff_code[3] = 0;
+			do {
+				if ((htab->table[point] & 0xff00) == 0) {
+					huff_code[0] = htab->table[point] & 0xf;
+					break;
+				}
+
+				if (bs_readBit(maindata_stream) == 1) { /* goto right-child*/
+					while ((htab->table[point] & 0xff) >= 250)
+						point += htab->table[point] & 0xff;
+					point += htab->table[point] & 0xff;
+				} else { /* goto left-child*/
+					while (htab->table[point] >> 8 >= 250)
+						point += htab->table[point] >> 8;
+					point += htab->table[point] >> 8;
+				}
+				--part3_len;
+			} while (++bitleft < 32 && part3_len > 0);
+			if (part3_len == 0)
+				break;
+
+			huff_code[3] = (huff_code[0] >> 3) & 0x1;
+			huff_code[2] = (huff_code[0] >> 2) & 0x1;
+			huff_code[1] = (huff_code[0] >> 1) & 0x1;
+			huff_code[0] = (huff_code[0] >> 0) & 0x1;
+
+			if (huff_code[3] > 0) {
+				if (bs_readBit(maindata_stream) == 1)
+					huff_code[3] = -huff_code[3];
+				--part3_len;
+				if (part3_len == 0)
+					break;
+			}
+			is[is_pos++] = huff_code[3];
+
+			if (huff_code[2] > 0) {
+				if (bs_readBit(maindata_stream) == 1)
+					huff_code[2] = -huff_code[2];
+				--part3_len;
+				if (part3_len == 0)
+					break;
+			}
+			is[is_pos++] = huff_code[2];
+
+			if (huff_code[1] > 0) {
+				if (bs_readBit(maindata_stream) == 1)
+					huff_code[1] = -huff_code[1];
+				--part3_len;
+				if (part3_len == 0)
+					break;
+			}
+			is[is_pos++] = huff_code[1];
+
+			if (huff_code[0] > 0) {
+				if (bs_readBit(maindata_stream) == 1)
+					huff_code[0] = -huff_code[0];
+				--part3_len;
+				if (part3_len == 0)
+					break;
+			}
+			is[is_pos] = huff_code[0];
+		}
 	}
 
-	// 解码大值区
-	for (is_pos = 0; is_pos < bv; ++is_pos) {
-		if (is_pos < region1_start) {
-			htab = ht + cur_ch->table_select[0];
-		} else if (is_pos < region2_start) {
-			htab = ht + cur_ch->table_select[1];
-		} else {
-			htab = ht + cur_ch->table_select[2];
-		}
-
-		while ((y = htab->table[off++]) < 0) {
-			if (bs_readBit(maindata_stream))
-				off -= y;
-		}
-
-		x = y >> 4;
-		y &= 0xf;
-
-		if (x == 15 && htab->linbits) {
-			x += bs_readBits(maindata_stream, htab->linbits);
-			if (x > 0 && bs_readBit(maindata_stream))
-				x = -x;
-		} else if (x) {
-			if (x > 0 && bs_readBit(maindata_stream))
-				x = -x;
-		}
-		_l3_huff_val[is_pos++] = x;
-
-		if (y == 15 && htab->linbits) {
-			y += bs_readBits(maindata_stream, htab->linbits);
-			if (y > 0 && bs_readBit(maindata_stream))
-				y = -y;
-		} else if (y) {
-			if (y > 0 && bs_readBit(maindata_stream))
-				y = -y;
-		}
-		_l3_huff_val[is_pos] = y;
-	}
-
-	htab = htc + cur_ch->count1table_select;
-
-	for (off = 0; is_pos <= 572 && (maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos <= bit_pos_end; ++is_pos) {
-		while ((v = htab->table[off++]) < 0) {
-			if (bs_readBit(maindata_stream))
-				off -= v;
-		}
-
-		if (v & 0x8 && bs_readBit(maindata_stream))
-			_l3_huff_val[is_pos++] = -1;
-		else _l3_huff_val[is_pos++] = 0;
-
-		if (is_pos >= 576)
-			break;
-
-		if (v & 0x4 && bs_readBit(maindata_stream))
-			_l3_huff_val[is_pos++] = -1;
-		else _l3_huff_val[is_pos++] = 0;
-
-		if (is_pos >= 576)
-			break;
-
-		if (v & 0x2 && bs_readBit(maindata_stream))
-			_l3_huff_val[is_pos++] = -1;
-		else _l3_huff_val[is_pos++] = 0;
-
-		if (is_pos >= 576)
-			break;
-
-		if (v & 0x1 && bs_readBit(maindata_stream))
-			_l3_huff_val[is_pos] = -1;
-		else _l3_huff_val[is_pos] = 0;
-	}
-
-	if ((maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos > bit_pos_end + 1) {
-		is_pos -= 4;
-	}
+	//if ((maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos > bit_pos_end + 1) {
+	//	is_pos -= 4;
+	//}
 
 	cur_ch->nonzero_len = is_pos;
 
-	for (; is_pos < 576; ++is_pos) {
-		_l3_huff_val[is_pos] = 0;
-	}
+	while (is_pos < 576)
+		is[is_pos++] = 0;
 
-	maindata_stream->bit_pos = bit_pos_end & 0x7;
-	maindata_stream->byte_ptr = maindata_stream->bit_buf + (bit_pos_end >> 3);
+	if (part3_len > 0)
+		bs_skipBits(maindata_stream, part3_len);
 }
 
-//static int _l3_huff_val[SBLIMIT * SSLIMIT];
-//static int l3_huffman_decode(struct bitstream* stream, struct l3_sideinfo* si, const int gr, const int ch)
+static void l3_requantize_long(const struct ch_info* const cur_ch, const int sfb, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
+{
+	const float sf_mult = cur_ch->scalefac_scale != 0 ? 1.0f : 0.5f;
+	float tmp1, tmp2, tmp3;
+
+	if (sfb < 21)
+		tmp1 = pow(2.0, -(sf_mult * (cur_ch->scalefac_l[sfb] + pretab[cur_ch->preflag][sfb])));
+	else tmp1 = 1.0f;
+
+	tmp2 = pow(2.0, 0.25 * (cur_ch->global_gain - 210.0));
+
+	if (is[pos] < 0)
+		tmp3 = -gain_powreq[-is[pos]];
+	else tmp3 = gain_powreq[is[pos]];
+
+	xr[pos] = tmp1 * tmp2 * tmp3;
+}
+
+static void l3_requantize_short(const struct ch_info* const cur_ch, const int sfb, const int window, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
+{
+	const float sf_mult = cur_ch->scalefac_scale != 0 ? 1.0f : 0.5f;
+	float tmp1, tmp2, tmp3;
+
+	if (sfb < 12)
+		tmp1 = pow(2.0, -(sf_mult * cur_ch->scalefac_s[sfb * 3 + window]));
+	else tmp1 = 1.0f;
+
+	tmp2 = pow(2.0, 0.25 * (cur_ch->global_gain - 210.0 - cur_ch->subblock_gain[window] * 8.0));
+
+	if (is[pos] < 0)
+		tmp3 = -gain_powreq[-is[pos]];
+	else tmp3 = gain_powreq[is[pos]];
+
+	xr[pos] = tmp1 * tmp2 * tmp3;
+}
+
+//static void l3_reorder(const struct ch_info* const cur_ch, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
 //{
-//	struct ch_info* cur_ch = &si->info_ch[ch][gr];
-//	int region[4] = { 0 };
-//	int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
-//	int idx = 0;
+//	int sfb = 0, next_sfb, is_pos = 0, window, width, i;
 //
-//	if (cur_ch->part2_3_len == 0) {
-//		for (; idx < 576; ++idx)
-//			_l3_huff_val[idx] = 0;
-//		return 0;
-//	}
 //
-//	unsigned int mask;
-//	int num = (8 - stream->bit_pos) & 7;
-//	mask = bs_readBits(stream, num) << 24;
-//	mask <<= 8 - num;
-//	part3_len -= num;
-//
-//	{
-//		int r1 = cur_ch->region0_count, r2 = cur_ch->region1_count, bv = cur_ch->big_values;
-//		if (cur_ch->blocksplit_flag) {
-//			r1 = 36;
-//			r2 = 576;
-//		} else {
-//			r1 = cur_ch->region0_count + 1;
-//			r2 = cur_ch->region1_count + 1 + r1;
-//			if (r2 > 22) r2 = 22;
-//			r1 = cur_sfb_table.index_long[r1];
-//			r2 = cur_sfb_table.index_long[r2];
-//		}
-//
-//		if (bv <= r1)
-//			region[0] = region[1] = region[2] = bv;
-//		else {
-//			region[0] = r1;
-//			if (bv <= r2)
-//				region[1] = region[2] = bv;
-//			else {
-//				region[1] = r2;
-//				region[2] = bv;
-//			}
-//		}
-//	}
-//
-//	//int tmp, maxidx, idx = 0;
-//	//const struct huff_tab* htab;
-//
-//	///*
-//	// * 1. 初始化num,mask,part3len
-//	// * mask: 暂存位流缓冲区不超过32比特数据,位流2级缓冲
-//	// * num: mask剩余的比特数
-//	// * part3len: 哈夫曼编码的主数据(main_data)的比特数
-//	// */
-//	//int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
-//	//int num = (8 - stream->bit_pos) & 7;
-//	//int mask = 0;
-//	//short x, y;
-//	//int i;
-//
-//	///*
-//	// * 2. 使位流缓冲区按字节对齐
-//	// */
-//	//if (num > 0) {
-//	//	mask = bs_readBits(stream, num);
-//	//	mask <<= 32 - num;
-//	//	part3_len -= num;
-//	//}
-//
-//	///*
-//	// * 3. 解码大值区
-//	// */
-//	//for (i = 0; i < 3; i++) {
-//	//	maxidx = region[i];
-//	//	htab = ht_bv + cur_ch->table_select[i];
-//	//	while (idx < maxidx) {
-//	//		if (part3_len + num <= 0) { //检测位流是否有错误
-//	//			num -= part3_len + num;
-//	//			break;
-//	//		}
-//
-//	//		while (num < 24) { // refresh mask
-//	//			mask |= bs_readBits(stream, 8) << (24 - num);
-//	//			num += 8;
-//	//			part3_len -= 8;
-//	//		}
-//	//		tmp = mask;
-//	//		y = htab->tab[(tmp >> 30) & 3];
-//	//		while (y < 0) {
-//	//			tmp <<= 2;
-//	//			y = htab->tab[((tmp >> 30) & 3) - y];
-//	//		}
-//	//		x = (y >> 8) & 0xff; // x暂存hlen
-//	//		num -= x;
-//	//		mask <<= x;
-//
-//	//		x = (y >> 4) & 0xf; // 解得x,y
-//	//		y &= 0xf;
-//
-//	//		if (x != 0) {
-//	//			if (x == 15 && htab->linebits != 0) {
-//	//				while (num < 24) { // refresh mask
-//	//					mask |= bs_readBits(stream, 8) << (24 - num);
-//	//					num += 8;
-//	//					part3_len -= 8;
-//	//				}
-//	//				//x += (mask >> (32 - htab->linebits))&; // 循环右移
-//	//				x += (mask >> (32 - htab->linebits)) & (0xffffffffU >> (32 - htab->linebits));	// ????? 
-//	//				num -= htab->linebits;
-//	//				mask <<= htab->linebits;
-//	//			}
-//	//			_l3_huff_val[idx++] = (mask < 0) ? -x : x;
-//	//			--num;
-//	//			mask <<= 1;
-//	//		} else
-//	//			_l3_huff_val[idx++] = 0;
-//
-//	//		if (y != 0) {
-//	//			if (y == 15 && htab->linebits != 0) {
-//	//				while (num < 24) { // refresh mask
-//	//					mask |= bs_readBits(stream, 8) << (24 - num);
-//	//					num += 8;
-//	//					part3_len -= 8;
-//	//				}
-//	//				// y += mask >> (32 - htab->linebits);
-//	//				y += (mask >> (32 - htab->linebits)) & (0xffffffffU >> (32 - htab->linebits));	// ??????
-//	//				num -= htab->linebits;
-//	//				mask <<= htab->linebits;
-//	//			}
-//	//			_l3_huff_val[idx++] = (mask < 0) ? -y : y;
-//	//			--num;
-//	//			mask <<= 1;
-//	//		} else
-//	//			_l3_huff_val[idx++] = 0;
-//	//	}
-//	//}
-//
-//	///*
-//	// * 4. 解码count1区
-//	// */
-//	//htab = ht_c + cur_ch->count1table_select;
-//	//while (idx < 572) {
-//	//	while (num < 10) { // 6(max hlen) + 4(signed bit)
-//	//		mask |= bs_readBits(stream, 8) << (24 - num);
-//	//		num += 8;
-//	//		part3_len -= 8;
-//	//	}
-//	//	tmp = mask;
-//	//	y = htab->tab[(tmp >> 28) & 0xf];
-//	//	while (y < 0) {
-//	//		tmp <<= 4;
-//	//		y = htab->tab[((tmp >> 28) & 0xf) - y];
-//	//	}
-//
-//	//	x = (y >> 8) & 0xff; // hlen
-//	//	mask <<= x;
-//	//	num -= x;
-//
-//	//	// 修改num后立即检测(当前粒度内的当前声道的)主数据是否处理完，使数据损坏的文件也能继续解码。
-//	//	if (part3_len + num <= 0) {
-//	//		num -= part3_len + num;
-//	//		break;
-//	//	}
-//
-//	//	// 一个码字(hcod)解码得到4个值
-//	//	if (/*(y <<= 28) < 0*/ y & 0x8) {
-//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-//	//		num--;
-//	//		mask <<= 1;
-//	//	} else
-//	//		_l3_huff_val[idx++] = 0;
-//	//	if (/*(y <<= 1) < 0*/ y & 0x4) {
-//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-//	//		num--;
-//	//		mask <<= 1;
-//	//	} else
-//	//		_l3_huff_val[idx++] = 0;
-//	//	if (/*(y <<= 1) < 0*/ y & 0x2) {
-//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-//	//		num--;
-//	//		mask <<= 1;
-//	//	} else
-//	//		_l3_huff_val[idx++] = 0;
-//	//	if (/*(y <<= 1) < 0*/ y & 0x1) {
-//	//		_l3_huff_val[idx++] = mask < 0 ? -1 : 1;
-//	//		num--;
-//	//		mask <<= 1;
-//	//	} else
-//	//		_l3_huff_val[idx++] = 0;
-//	//}
-//
-//	//if (num > 0) // num位归还到位流缓冲区
-//	//	bs_backBits(stream, num);
-//
-//	///*
-//	// * 5. rzone区直接置0,即hv[nonzero..575]=0
-//	// */
-//	//cur_ch->nonzero_len = idx;
-//	//for (; idx < 576; ++idx)
-//	//	_l3_huff_val[idx] = 0;
-//
-//	///*
-//	// * 6. 丢弃附属位(ancillary_bit)。附属位不超过多少位？
-//	// */
-//	//part3_len += num;
-//	//if (part3_len > 0)		// 这还不一定是附属位，码流有错误也有可能出现这种情况
-//	//	bs_skipBits(stream, part3_len);
-//
-//	//return cur_ch->nonzero_len;
 //}
 
-static void l3_requantize_samples(const struct mpeg_frame* frame, struct l3_sideinfo* si, const int gr, const int ch)
+static void l3_requantize(const struct ch_info* const cur_ch, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
 {
-	struct ch_info* cur_ch = &si->info_ch[ch][gr];
-	int shift = cur_ch->scalefac_scale + 1, sfb_idx = 0, hvidx = 0, sb_idx, val, xriStart = 0, xri, scf_idx = 0, pow2gain_idx = 255 - cur_ch->global_gain, width;
-	float requVal;
+	int sfb = 0, next_sfb, is_pos = 0, window, width, i;
+	float re[SBLIMIT * SSLIMIT];
 
-	if (cur_ch->part2_3_len == 0) {
-		for (; hvidx < 576; ++hvidx)
-			cur_ch->buf[hvidx] = 0.0;
-		return;
-	}
+	if (cur_ch->nonzero_len != 0) {
+		if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
+			if (cur_ch->mixed_block_flag == 1) { /* MIXED BLOCk*/
+				for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_long[sfb + 1]; is_pos < 36; ++is_pos) {
+					if (is_pos == next_sfb) {
+						++sfb;
+						next_sfb = cur_sfb_table.index_long[sfb + 1];
+					}
 
-	if (frame->is_MS)
-		pow2gain_idx += 2;
+					l3_requantize_long(cur_ch, sfb, is_pos, is, xr);
+				}
 
-	// pure SHORT blocks:
-	// window_switching_flag=1, block_type=2, mixed_block_flag=0
-
-	if (cur_ch->blocksplit_flag && cur_ch->block_type == 2) {
-		rzero.band_short[0] = rzero.band_short[1] = rzero.band_short[2] = -1;
-		if (cur_ch->mixed_block_flag) {
-			/*
-			 * 混合块:
-			 * 混合块的前8个频带是长块。 前8块各用一个增益因子逆量化，这8个增益因子的频带总和为36，
-			 * 这36条频率线用长块公式逆量化。
-			 */
-			rzero.band_long = -1;
-			for (; sfb_idx < 8; ++sfb_idx) {
-				requVal = gain_pow2_is[pow2gain_idx + ((si->scalefac_l[ch][sfb_idx] + pretab[cur_ch->preflag][sfb_idx]) << shift)];
-				for (sb_idx = 0, width = cur_sfb_table.width_long[sfb_idx]; sb_idx < width; ++sb_idx, ++hvidx) {
-					val = _l3_huff_val[hvidx]; // 哈夫曼值
-					if (val < 0) {
-						cur_ch->buf[hvidx] = -requVal * gain_powreq[-val];
-						rzero.band_long = sfb_idx;
-					} else if (val > 0) {
-						cur_ch->buf[hvidx] = requVal * gain_powreq[val];
-						rzero.band_long = sfb_idx;
-					} else
-						cur_ch->buf[hvidx] = 0;
+				for (is_pos = 36, sfb = 3, next_sfb = cur_sfb_table.index_short[sfb + 1] * 3, width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
+					if (is_pos == next_sfb) {
+						for (i = 0; i < 3 * width; ++i) {
+							xr[3 * (cur_sfb_table.index_short[12] + sfb) + i] = re[i];
+						}
+						++sfb;
+						next_sfb = cur_sfb_table.index_short[sfb + 1] * 3;
+						width = cur_sfb_table.width_short[sfb];
+					}
+					for (window = 0; window < 3; ++window) {
+						for (i = 0; i < width; ++i) {
+							l3_requantize_short(cur_ch, sfb, window, is_pos, is, xr);
+							re[i * 3 + window] = xr[is_pos];
+							++is_pos;
+						}
+					}
+				}
+			} else { /* pure SHORT BLOCK */
+				for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_short[sfb + 1] * 3, width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
+					if (is_pos == next_sfb) {
+						for (i = 0; i < 3 * width; ++i) {
+							xr[3 * (cur_sfb_table.index_short[12] + sfb) + i] = re[i];
+						}
+						++sfb;
+						next_sfb = cur_sfb_table.index_short[sfb + 1] * 3;
+						width = cur_sfb_table.width_short[sfb];
+					}
+					for (window = 0; window < 3; ++window) {
+						for (i = 0; i < width; ++i) {
+							l3_requantize_short(cur_ch, sfb, window, is_pos, is, xr);
+							re[i * 3 + window] = xr[is_pos];
+							++is_pos;
+						}
+					}
 				}
 			}
 
-			/*
-			 * 混合块的后9个频带是被加窗的短块，其每一块同一窗口内3个值的增益因子频带相同。
-			 * 后9块增益因子对应的频率子带值为widthShort[3..11]
-			 */
-			rzero.band_short[0] = rzero.band_short[1] = rzero.band_short[2] = 2;
-			++rzero.band_long;
-			scf_idx = 9;
-			sfb_idx = 3;
-			xriStart = 36; // 为短块重排序准备好下标
-		}
-
-		// 短块(混合块中的短块和纯短块)
-		for (; hvidx < cur_ch->nonzero_len; ++sfb_idx) {
-			width = cur_sfb_table.width_short[sfb_idx];
-			for (int win = 0; win < 3; ++win) {
-				requVal = gain_pow2_is[pow2gain_idx + cur_ch->subblock_gain[win] + (si->scalefac_s[ch][scf_idx++] << shift)];
-				xri = xriStart + win;
-				for (sb_idx = 0; sb_idx < width; ++sb_idx, ++hvidx, xri += 3) {
-					val = _l3_huff_val[hvidx];
-					if (val < 0) {
-						cur_ch->buf[xri] = -requVal * gain_powreq[-val];
-						rzero.band_short[win] = sfb_idx;
-					} else if (val > 0) {
-						cur_ch->buf[xri] = requVal * gain_powreq[val];
-						rzero.band_short[win] = sfb_idx;
-					} else
-						cur_ch->buf[xri] = 0;
+			for (i = 0; i < 3 * width; ++i) {
+				xr[3 * (cur_sfb_table.index_short[12] + sfb) + i] = re[i];
+			}
+		} else { /* pure LONG BLOCK */
+			for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_long[sfb + 1]; is_pos < cur_ch->nonzero_len; ++is_pos) {
+				if (is_pos == next_sfb) {
+					++sfb;
+					next_sfb = cur_sfb_table.index_long[sfb + 1];
 				}
-			}
-			xriStart = xri - 2;
-		}
-		++rzero.band_short[0];
-		++rzero.band_short[1];
-		++rzero.band_short[2];
-		++rzero.band_long;
-	} else {
-		// 长块
-		xri = -1;
-		for (; hvidx < cur_ch->nonzero_len; ++sfb_idx) {
-			requVal = gain_powreq[pow2gain_idx + ((si->scalefac_l[ch][sfb_idx] + pretab[cur_ch->preflag][sfb_idx]) << shift)];
-			for (sb_idx = hvidx + cur_sfb_table.width_long[sfb_idx]; hvidx < sb_idx; ++hvidx) {
-				val = _l3_huff_val[hvidx];
-				if (val < 0) {
-					cur_ch->buf[hvidx] = -requVal * gain_pow2_is[-val];
-					xri = sfb_idx;
-				} else if (val > 0) {
-					cur_ch->buf[hvidx] = requVal * gain_pow2_is[val];
-					xri = sfb_idx;
-				} else
-					cur_ch->buf[hvidx] = 0;
+
+				l3_requantize_long(cur_ch, sfb, is_pos, is, xr);
 			}
 		}
-		rzero.band_long = xri + 1;
 	}
 
 	// 不逆量化0值区,置0.
-	for (; hvidx < 576; ++hvidx)
-		cur_ch->buf[hvidx] = 0;
+	for (; is_pos < 576; ++is_pos)
+		xr[is_pos] = 0.0f;
+
+	////if (frame->is_MS)
+	////	pow2gain_idx += 2;
+
+	//// pure SHORT blocks:
+	//// window_switching_flag=1, block_type=2, mixed_block_flag=0
+
+	//if (cur_ch->blocksplit_flag && cur_ch->block_type == 2) {
+	//	rzero.band_short[0] = rzero.band_short[1] = rzero.band_short[2] = -1;
+	//	if (cur_ch->mixed_block_flag) {
+	//		/*
+	//		 * 混合块:
+	//		 * 混合块的前8个频带是长块。 前8块各用一个增益因子逆量化，这8个增益因子的频带总和为36，
+	//		 * 这36条频率线用长块公式逆量化。
+	//		 */
+	//		rzero.band_long = -1;
+	//		for (; sfb_idx < 8; ++sfb_idx) {
+	//			requVal = gain_pow2_is[pow2gain_idx + ((si->scalefac_l[ch][sfb_idx] + pretab[cur_ch->preflag][sfb_idx]) << shift)];
+	//			for (sb_idx = 0, width = cur_sfb_table.width_long[sfb_idx]; sb_idx < width; ++sb_idx, ++hvidx) {
+	//				val = _l3_huff_val[hvidx]; // 哈夫曼值
+	//				if (val < 0) {
+	//					cur_ch->buf[hvidx] = -requVal * gain_powreq[-val];
+	//					rzero.band_long = sfb_idx;
+	//				} else if (val > 0) {
+	//					cur_ch->buf[hvidx] = requVal * gain_powreq[val];
+	//					rzero.band_long = sfb_idx;
+	//				} else
+	//					cur_ch->buf[hvidx] = 0;
+	//			}
+	//		}
+
+	//		/*
+	//		 * 混合块的后9个频带是被加窗的短块，其每一块同一窗口内3个值的增益因子频带相同。
+	//		 * 后9块增益因子对应的频率子带值为widthShort[3..11]
+	//		 */
+	//		rzero.band_short[0] = rzero.band_short[1] = rzero.band_short[2] = 2;
+	//		++rzero.band_long;
+	//		scf_idx = 9;
+	//		sfb_idx = 3;
+	//		xriStart = 36; // 为短块重排序准备好下标
+	//	}
+
+	//	// 短块(混合块中的短块和纯短块)
+	//	for (; hvidx < cur_ch->nonzero_len; ++sfb_idx) {
+	//		width = cur_sfb_table.width_short[sfb_idx];
+	//		for (int win = 0; win < 3; ++win) {
+	//			requVal = gain_pow2_is[pow2gain_idx + cur_ch->subblock_gain[win] + (si->scalefac_s[ch][scf_idx++] << shift)];
+	//			xri = xriStart + win;
+	//			for (sb_idx = 0; sb_idx < width; ++sb_idx, ++hvidx, xri += 3) {
+	//				val = _l3_huff_val[hvidx];
+	//				if (val < 0) {
+	//					cur_ch->buf[xri] = -requVal * gain_powreq[-val];
+	//					rzero.band_short[win] = sfb_idx;
+	//				} else if (val > 0) {
+	//					cur_ch->buf[xri] = requVal * gain_powreq[val];
+	//					rzero.band_short[win] = sfb_idx;
+	//				} else
+	//					cur_ch->buf[xri] = 0;
+	//			}
+	//		}
+	//		xriStart = xri - 2;
+	//	}
+	//	++rzero.band_short[0];
+	//	++rzero.band_short[1];
+	//	++rzero.band_short[2];
+	//	++rzero.band_long;
+	//} else {
+	//	// 长块
+	//	xri = -1;
+	//	for (; hvidx < cur_ch->nonzero_len; ++sfb_idx) {
+	//		requVal = gain_powreq[pow2gain_idx + ((si->scalefac_l[ch][sfb_idx] + pretab[cur_ch->preflag][sfb_idx]) << shift)];
+	//		for (sb_idx = hvidx + cur_sfb_table.width_long[sfb_idx]; hvidx < sb_idx; ++hvidx) {
+	//			val = _l3_huff_val[hvidx];
+	//			if (val < 0) {
+	//				cur_ch->buf[hvidx] = -requVal * gain_pow2_is[-val];
+	//				xri = sfb_idx;
+	//			} else if (val > 0) {
+	//				cur_ch->buf[hvidx] = requVal * gain_pow2_is[val];
+	//				xri = sfb_idx;
+	//			} else
+	//				cur_ch->buf[hvidx] = 0;
+	//		}
+	//	}
+	//	rzero.band_long = xri + 1;
+	//}
 }
 
-static void l3_do_ms_stereo(struct l3_sideinfo* si, const int gr)
+static void l3_do_ms_stereo(struct gr_info* const cur_gr, const int gr, float xr[2][2][SBLIMIT * SSLIMIT])
 {
-	int max_len = max(si->info_ch[0][gr].nonzero_len, si->info_ch[1][gr].nonzero_len);
-	si->info_ch[0][gr].nonzero_len = si->info_ch[1][gr].nonzero_len = max_len;
+	int max_len = max(cur_gr->ch[0].nonzero_len, cur_gr->ch[1].nonzero_len);
+	cur_gr->ch[0].nonzero_len = cur_gr->ch[1].nonzero_len = max_len;
 
-	for (--max_len; max_len >= 0; --max_len) {
-		const float v0 = si->info_ch[0][gr].buf[max_len];
-		const float v1 = si->info_ch[1][gr].buf[max_len];
-		si->info_ch[0][gr].buf[max_len] = v0 + v1;
-		si->info_ch[1][gr].buf[max_len] = v0 - v1;
+	const float v = sqrt(2.0);
+	for (int i = 0; i < max_len; ++i) {
+		const float v0 = (xr[0][gr][i] + xr[1][gr][i]) / v;
+		const float v1 = (xr[0][gr][i] - xr[1][gr][i]) / v;
+		xr[0][gr][i] = v0;
+		xr[1][gr][i] = v1;
 	}
 }
 
-static void l3_do_intesity_stereo(struct l3_sideinfo* si, const int gr)
+static void do_intensity_stereo_long();
+static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, float xr[2][2][SBLIMIT * SSLIMIT])
 {
-	struct ch_info* right_ch = &si->info_ch[1][gr];
-	int sfb, is_possb, idx, width;
-	float v;
+	int sfb, is_possb, width, sfb_start, sfb_stop, i, window;
+	float is_ratio_l, is_ratio_r;
 
-	if (right_ch->block_type == 2) {
+	if (cur_gr->ch[0].win_switch_flag == 1 && cur_gr->ch[0].block_type == 2) {
 		// MPEG-1, short block/mixed block
-		for (int win = 0; win < 3; ++win) {
-			for (sfb = rzero.band_short[win]; sfb < 12; ++sfb) { // 混合块sfb最小为3
-				if ((is_possb = si->scalefac_s[1][sfb * 3 + win]) >= 7)
+		if (cur_gr->ch[0].mixed_block_flag == 1) {
+			for (sfb = 0; sfb < 8; ++sfb) {
+				if (cur_sfb_table.index_long[sfb] < cur_gr->ch[1].nonzero_len)
 					continue;
-				for (width = cur_sfb_table.width_short[sfb], idx = cur_sfb_table.index_short[sfb] * 3 + win; width > 0; --width, idx += 3) {
-					v = si->info_ch[0][gr].buf[idx];
-					si->info_ch[0][gr].buf[idx] = is_table[is_possb] * v;
-					right_ch->buf[idx] = is_table[6 - is_possb] * v;
+				if ((is_possb = cur_gr->ch[0].scalefac_l[sfb]) == 7)
+					continue;
+				sfb_start = cur_sfb_table.index_long[sfb];
+				sfb_stop = cur_sfb_table.index_long[sfb + 1];
+				if (is_possb == 6) {
+					is_ratio_l = 1.0f;
+					is_ratio_r = 0.0f;
+				} else {
+					is_ratio_l = is_ratio[is_possb] / (1.0f + is_ratio[is_possb]);
+					is_ratio_r = 1.0f / (1.0f + is_ratio[is_possb]);
+				}
+				for (i = sfb_start; i < sfb_stop; ++i) {
+					xr[0][gr][i] *= is_ratio_l;
+					xr[1][gr][i] *= is_ratio_r;
+				}
+			}
+
+			for (sfb = 3; sfb < 12; ++sfb) {
+				if (cur_sfb_table.index_short[sfb] < cur_gr->ch[1].nonzero_len)
+					continue;
+				width = cur_sfb_table.width_short[sfb];
+				for (window = 0; window < 3; ++window) {
+					if ((is_possb = cur_gr->ch[0].scalefac_s[sfb * 3 + window]) == 7)
+						continue;
+					sfb_start = cur_sfb_table.index_short[sfb] * 3 + width * window;
+					sfb_stop = sfb_start + width;
+					if (is_possb == 6) {
+						is_ratio_l = 1.0f;
+						is_ratio_r = 0.0f;
+					} else {
+						is_ratio_l = is_ratio[is_possb] / (1.0f + is_ratio[is_possb]);
+						is_ratio_r = 1.0f / (1.0f + is_ratio[is_possb]);
+					}
+					for (i = sfb_start; i < sfb_stop; ++i) {
+						xr[0][gr][i] *= is_ratio_l;
+						xr[1][gr][i] *= is_ratio_r;
+					}
+				}
+			}
+		} else {
+			for (sfb = 0; sfb < 12; ++sfb) {
+				if (cur_sfb_table.index_short[sfb] < cur_gr->ch[1].nonzero_len)
+					continue;
+				width = cur_sfb_table.width_short[sfb];
+				for (window = 0; window < 3; ++window) {
+					if ((is_possb = cur_gr->ch[0].scalefac_s[sfb * 3 + window]) == 7)
+						continue;
+					sfb_start = cur_sfb_table.index_short[sfb] * 3 + width * window;
+					sfb_stop = sfb_start + width;
+					if (is_possb == 6) {
+						is_ratio_l = 1.0f;
+						is_ratio_r = 0.0f;
+					} else {
+						is_ratio_l = is_ratio[is_possb] / (1.0f + is_ratio[is_possb]);
+						is_ratio_r = 1.0f / (1.0f + is_ratio[is_possb]);
+					}
+					for (i = sfb_start; i < sfb_stop; ++i) {
+						xr[0][gr][i] *= is_ratio_l;
+						xr[1][gr][i] *= is_ratio_r;
+					}
 				}
 			}
 		}
-
-		// TODO: need check l-part?
 	} else {
 		// MPEG-1, long block
-		for (sfb = rzero.band_long; sfb < 22; ++sfb) {
-			if ((is_possb = si->scalefac_l[1][sfb]) >= 7)
+		for (sfb = 0; sfb < 21; ++sfb) {
+			if (cur_sfb_table.index_long[sfb] < cur_gr->ch[1].nonzero_len)
 				continue;
-			for (width = cur_sfb_table.width_long[sfb], idx = cur_sfb_table.index_long[sfb]; width > 0; --width, ++idx) {
-				v = si->info_ch[0][gr].buf[idx];
-				si->info_ch[0][gr].buf[idx] = is_table[is_possb] * v;
-				right_ch->buf[idx] = is_table[6 - is_possb] * v;
+			if ((is_possb = cur_gr->ch[0].scalefac_l[sfb]) == 7)
+				continue;
+			sfb_start = cur_sfb_table.index_long[sfb];
+			sfb_stop = cur_sfb_table.index_long[sfb + 1];
+			if (is_possb == 6) {
+				is_ratio_l = 1.0f;
+				is_ratio_r = 0.0f;
+			} else {
+				is_ratio_l = is_ratio[is_possb] / (1.0f + is_ratio[is_possb]);
+				is_ratio_r = 1.0f / (1.0f + is_ratio[is_possb]);
+			}
+			for (i = sfb_start; i < sfb_stop; ++i) {
+				xr[0][gr][i] *= is_ratio_l;
+				xr[1][gr][i] *= is_ratio_r;
 			}
 		}
 	}
 }
 
-static void l3_do_stereo(const struct mpeg_frame* frame, struct l3_sideinfo* si, const int gr)
+static void l3_do_stereo(const struct mpeg_frame* frame, struct gr_info* const cur_gr, const int gr, float xr[2][2][SBLIMIT * SSLIMIT])
 {
 	if (frame->is_MS)
-		l3_do_ms_stereo(si, gr);
+		l3_do_ms_stereo(cur_gr, gr, xr);
 
-	if (si->info_ch[0][gr].mixed_block_flag != si->info_ch[1][gr].mixed_block_flag || si->info_ch[0][gr].block_type != si->info_ch[1][gr].block_type) {
-		fprintf(stderr, "[W] bad stereo!\n");
+	if (cur_gr->ch[0].mixed_block_flag != cur_gr->ch[1].mixed_block_flag || cur_gr->ch[0].block_type != cur_gr->ch[1].block_type) {
+		LOG_W("check_stereo", "bad stereo!");
 	} else if (frame->is_Intensity)
-		l3_do_intesity_stereo(si, gr);
+		l3_do_intesity_stereo(cur_gr, gr, xr);
 }
 
-static void l3_antialias(struct ch_info* cur_ch)
+static void l3_antialias(const struct ch_info* const cur_ch, float xr[SBLIMIT * SSLIMIT])
 {
-	//int maxi;
-	//float lo, hi;
+	int sblimit;
 
-	//if (cur_ch->block_type == 2) {
-	//	if (cur_ch->mixed_block_flag == 0)
-	//		return;
-	//	maxi = 36;
-	//} else
-	//	maxi = 576;
+	if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
+		if (cur_ch->mixed_block_flag == 0)
+			return;
+		sblimit = 2 * 18;
+	} else
+		sblimit = 32 * 18;
 
-	//for (int i = 18; i < maxi; i += 18) {
-	//	for (int j = 0; j < 8; ++j) {
-	//		lo = cur_ch->buf[i - 1 - j];
-	//		hi = cur_ch->buf[i + j];
-	//		cur_ch->buf[i - 1 - j] = lo * cs[j] - hi * ca[j];
-	//		cur_ch->buf[i + j] = lo * ca[j] + hi * cs[j];
-	//	}
-	//}
+	for (int sb = 0; sb < sblimit; sb += 18) {
+		for (int i = 0; i < 8; ++i) {
+			const float lb = xr[sb - i - 1];
+			const float ub = xr[sb + i];
+			xr[sb - i - 1] = lb * cs[i] - ub * ca[i];
+			xr[sb + i] = ub * cs[i] + lb * ca[i];
+		}
+	}
 
-	int i, maxi;
+	/*int i, maxi;
 	float bu, bd;
 	float* recv = cur_ch->buf;
 
@@ -983,9 +874,10 @@ static void l3_antialias(struct ch_info* cur_ch)
 		bd = recv[i + 25];
 		recv[i + 10] = bu * 0.99999316f + bd * 3.69997467e-3f;
 		recv[i + 25] = bd * 0.99999316f - bu * 3.69997467e-3f;
-	}
+	}*/
 }
 
+#if 0
 static void imdct12(float pre_block[SBLIMIT * SSLIMIT], float recv[SBLIMIT * SSLIMIT], int off)
 {
 	float* io = recv;
@@ -1289,42 +1181,50 @@ static void imdct36(float pre_block[SBLIMIT * SSLIMIT], float recv[SBLIMIT * SSL
 	pre[i + 16] = out7 * win[34];
 	pre[i + 17] = out8 * win[35];
 }
+#endif
 
-//static void imdct36(const float samples_sb[SSLIMIT], float output[36])
+static void imdct12(const float xr[18], float rawout[36])
+{
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 12; ++j) {
+			float sum = 0.0f;
+			for (int k = 0; k < 6; ++k) {
+				sum += xr[i + 3 * k] * imdct_s[k][j];
+			}
+			rawout[6 * i + j + 6] += sum * imdct_window[2][j];
+		}
+	}
+}
+
+static void imdct36(const float xr[18], float rawout[36], unsigned char block_type)
+{
+	for (int i = 0; i < 36; ++i) {
+		float sum = 0.0f;
+		for (int j = 0; j < 18; ++j) {
+			sum += xr[j] * imdct_l[j][i];
+		}
+		rawout[i] = sum * imdct_window[block_type][i];
+	}
+}
+
+//static void l3_imdct_s(const float xr[SBLIMIT], float rawout[36])
 //{
-//	for (int i = 0; i < 36; ++i) {
-//		output[i] = 0.0;
-//		for (int k = 0; k < SSLIMIT; k += 3) {
-//			output[i] += samples_sb[k + 0] * imdct_l[i][k + 0];
-//			output[i] += samples_sb[k + 1] * imdct_l[i][k + 1];
-//			output[i] += samples_sb[k + 2] * imdct_l[i][k + 2];
+//	for (int i = 0; i < 3; ++i) {
+//		imdct12
+//		for (int j = 0; j < 12; ++j) {
+//			float sum = 0.0f;
 //		}
 //	}
-//}
-//
-//static void imdct12(const float samples_sb[SSLIMIT], float samples_pre[SBLIMIT * SSLIMIT], unsigned short off)
-//{
-//	for (int i = 0; i < 36; ++i) {
-//		samples_pre[off + i] = 0.0;
-//		for (int k = 0; k < SSLIMIT; k += 3) {
-//			samples_pre[off + i] += samples_sb[k + 0] * imdct_l[i][k + 0];
-//			samples_pre[off + i] += samples_sb[k + 1] * imdct_l[i][k + 1];
-//			samples_pre[off + i] += samples_sb[k + 2] * imdct_l[i][k + 2];
-//		}
-//	}
-//}
-//
-//static void l3_imdct_s(const float samples_sb[SSLIMIT], float output[36])
-//{
+//	imdct12()
 //	window_s[];
 //	imdct_s[];
 //}
-//
-//static void l3_imdct_l(const float samples_sb[SSLIMIT], float output[36], unsigned char block_type)
+
+//static void l3_imdct_l(const float xr[SBLIMIT], unsigned char block_type, float rawout[SBLIMIT])
 //{
 //	int i;
 //
-//	imdct36(samples_sb, output);
+//	imdct36(xr, rawout);
 //
 //	switch (block_type) {
 //	case 0:	// normal window
@@ -1362,25 +1262,35 @@ static void imdct36(float pre_block[SBLIMIT * SSLIMIT], float recv[SBLIMIT * SSL
 //	}
 //}
 
+//static void l3_overlapping(float xr[36], float overlapp[18])
+
 // static float _samples_pre[2][SBLIMIT * SSLIMIT];
-static void l3_hybrid(struct ch_info* cur_ch, const int ch)
+static void l3_hybrid(const struct ch_info* const cur_ch, const int ch, float xr[SBLIMIT * SSLIMIT])
 {
-	int off = 0, block_type;
+	float rawout[36];
+	int off;
 
-	for (off = 0; off < cur_ch->nonzero_len; off += 18) {
-		block_type = (cur_ch->blocksplit_flag && cur_ch->mixed_block_flag && off < 36) ? 0 : cur_ch->block_type;
+	for (off = 0; off < SBLIMIT * SSLIMIT/* && off < cur_ch->nonzero_len*/; off += SSLIMIT) {
+		unsigned char block_type = (cur_ch->win_switch_flag == 1 && cur_ch->mixed_block_flag == 1 && off < 2 * SSLIMIT) ? 0 : cur_ch->block_type;
 
+		/* IMDCT and WINDOWING */
 		if (block_type == 2)
-			imdct12(pre_block[ch], cur_ch->buf, off);
+			imdct12(xr + off, rawout);
 		else
-			imdct36(pre_block[ch], cur_ch->buf, off, block_type);
+			imdct36(xr + off, rawout, block_type);
+
+		/* OVERLAPPING */
+		for (int i = 0; i < SSLIMIT; ++i) {
+			xr[off + i] = rawout[i] + overlapp[ch][off + i];
+			overlapp[ch][off + i] = rawout[i + 18];
+		}
 	}
 
 	// 0值区
-	for (; off < 576; ++off) {
-		cur_ch->buf[off] = pre_block[ch][off];
-		pre_block[ch][off] = 0;
-	}
+	//for (; off < 576; ++off) {
+	//	cur_ch->buf[off] = pre_block[ch][off];
+	//	pre_block[ch][off] = 0;
+	//}
 }
 
 void l3_init(const struct mpeg_header* const header)
@@ -1390,40 +1300,73 @@ void l3_init(const struct mpeg_header* const header)
 	cur_sfb_table.width_long = __sfb_width_long[header->sampling_frequency];
 	cur_sfb_table.width_short = __sfb_width_short[header->sampling_frequency];
 
-	int i/*, k*/;
+	int i, k;
 	for (i = 0; i < 8207; ++i)
 		gain_powreq[i] = (float)pow((double)i, 4.0 / 3.0);
 
-	for (i = -256; i < 118 + 4; ++i)
-		gain_pow2_is[i + 256] = (float)pow(2.0, (i + 210.0) * -1.0 / 4.0);
+	//for (i = -256; i < 118 + 4; ++i)
+	//	gain_pow2_is[i + 256] = (float)pow(2.0, (i + 210.0) * -1.0 / 4.0);
 
-#if 0
-	float div_c;
+	double div_c;
 	for (i = 0; i < 8; ++i) {
 		div_c = sqrt(1.0 + pow(__c[i], 2.0));
 		cs[i] = 1.0 / div_c;
-		ca[i] = __c[i] / cs[i];
+		ca[i] = __c[i] / div_c;
 	}
 
-	for (i = 0; i < 12; ++i) {
-		for (k = 0; k < 6; ++k) {
-			imdct_s[i][k] = cos(PI * (2.0 * i + 7.0) * (2.0 * k + 1.0) / 24.0);
+	{
+		/* blocktype 0*/
+		for (i = 0; i < 36; ++i) {
+			imdct_window[0][i] = (float)sin(PI * (i + 0.5) / 36.0);
 		}
-		window_s[i] = sin(PI * (2.0 * i + 1.0) / 24.0);
+		/* Blocktype 1 */
+		for (i = 0; i < 18; ++i) {
+			imdct_window[1][i] = (float)sin(PI * (i + 0.5) / 36.0);
+		}
+		for (i = 18; i < 24; ++i) {
+			imdct_window[1][i] = 1.0f;
+		}
+		for (i = 24; i < 30; ++i) {
+			imdct_window[1][i] = (float)sin(PI * (i + 0.5 - 18.0) / 12.0);
+		}
+		/* Blocktype 2 */
+		for (i = 0; i < 12; ++i) {
+			imdct_window[2][i] = (float)sin(PI * (i + 0.5) / 12.0);
+		}
+		/* Blocktype 3 */
+		for (i = 6; i < 12; ++i) {
+			imdct_window[3][i] = (float)sin(PI * (i + 0.5 - 6.0) / 12.0);
+		}
+		for (i = 12; i < 18; ++i) {
+			imdct_window[3][i] = 1.0f;
+		}
+		for (i = 18; i < 36; ++i) {
+			imdct_window[3][i] = (float)sin(PI * (i + 0.5) / 36.0);
+		}
 	}
 
-	for (i = 0; i < 36; ++i) {
-		for (k = 0; k < 18; ++k) {
-			imdct_l[i][k] = cos(PI * (2.0 * i + 19.0) * (2.0 * k + 1.0) / 72.0);
+	for (i = 0; i < 6; ++i) {
+		for (k = 0; k < 12; ++k) {
+			imdct_s[i][k] = cos(PI * (2.0 * k + 7.0) * (2.0 * i + 1.0) / 24.0);
 		}
-		window_l[i] = sin(PI * (2.0 * i + 1.0) / 72.0);
+		// window_s[i] = sin(PI * (2.0 * i + 1.0) / 24.0);
 	}
-#endif
+
+	for (i = 0; i < 18; ++i) {
+		for (k = 0; k < 36; ++k) {
+			imdct_l[i][k] = cos(PI * (2.0 * k + 19.0) * (2.0 * i + 1.0) / 72.0);
+		}
+		// window_l[i] = sin(PI * (2.0 * i + 1.0) / 72.0);
+	}
+
 	// static float is_coef[] = { 0.0, 0.211324865, 0.366025404, 0.5, 0.633974596, 0.788675135, 1.0 };
-	double is_ratio;
-	for (i = 0; i < 7; ++i) {
-		is_ratio = tan(i * PI / 12.0);
-		is_table[i] = (float)(is_ratio / (1.0 + is_ratio));
+	//double is_ratio;
+	//for (i = 0; i < 7; ++i) {
+	//	is_ratio = tan(i * PI / 12.0);
+	//	is_table[i] = (float)(is_ratio / (1.0 + is_ratio));
+	//}
+	for (i = 0; i < 6; ++i) {
+		is_ratio[i] = tan(i * PI / 12.0);
 	}
 
 	//float q = sqrt(2);	// # define M_SQRT2	1.41421356237309504880
@@ -1435,51 +1378,72 @@ void l3_init(const struct mpeg_header* const header)
 	//	_intesity_tabs[1][1][i] = q / (1.0 + t);
 	//}
 
-	//init_synthesis_tabs();
+	init_synthesis_tabs();
 }
 
-static float is[2][2][576];
 int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 {
-	// unsigned char l3_scf[2][39]; // short[13][3], mixed[38], long[22]
-	// static float xr[2][2][SBLIMIT * SSLIMIT];
-
 	const struct mpeg_frame* const cur_frame = &handle->cur_frame;
 	struct bs* const file_stream = handle->file_stream;
 	struct bs* const sideinfo_stream = handle->sideinfo_stream;
 	struct bs* const maindata_stream = handle->maindata_stream;
 	struct l3_sideinfo sideinfo = { 0 };
+	short is[SBLIMIT * SSLIMIT];
+	float xr[2][2][SBLIMIT * SSLIMIT];
 	char log_msg_buf[64];
-	
+
+
 	sideinfo_stream->byte_ptr = file_stream->byte_ptr;
 	sideinfo_stream->bit_pos = 0;
-
 	if (l3_decode_sideinfo(sideinfo_stream, &sideinfo, cur_frame->nch) == -1) {
 		sprintf(log_msg_buf, "frame#%u skipped(decode sideinfo failed)!", frame_count);
 		LOG_E("l3_decode_sideinfo", log_msg_buf);
 		return 1;
 	}
 
-	memcpy(maindata_stream->bit_buf, maindata_stream->end_ptr - sideinfo.main_data_begin, sideinfo.main_data_begin);
-	maindata_stream->byte_ptr = maindata_stream->bit_buf;
+	if (bs_Length(maindata_stream) < sideinfo.main_data_begin) {
+		sprintf(log_msg_buf, "frame#%u maindata miss!", frame_count);
+		LOG_E("adjust_maindata", log_msg_buf);
+		if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, 0, cur_frame->maindata_size) != cur_frame->maindata_size) {
+			sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);
+			LOG_E("bs_Append(maindata_stream)", log_msg_buf);
+		}
+		return 1;
+	}
+	maindata_stream->byte_ptr -= sideinfo.main_data_begin;
 	maindata_stream->bit_pos = 0;
-	maindata_stream->end_ptr -= sideinfo.main_data_begin;
 
-	if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, sideinfo.main_data_begin, cur_frame->maindata_size) != cur_frame->maindata_size) {
+	if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, 0, cur_frame->maindata_size) != cur_frame->maindata_size) {
 		sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);
 		LOG_E("bs_Append(maindata_stream)", log_msg_buf);
-		return -1;
+		return 1;
 	}
 
 	for (int gr = 0; gr < 2; ++gr) {
 		for (int ch = 0; ch < cur_frame->nch; ++ch) {
-			struct ch_info* const cur_ch = &sideinfo.info_ch[ch][gr];
-			int part2_start = (maindata_stream->byte_ptr - maindata_stream->bit_buf) * 8 + maindata_stream->bit_pos, bit_pos_end;
+			struct ch_info* const cur_ch = &sideinfo.gr[gr].ch[ch];
+			l3_decode_scalefactors(maindata_stream, cur_ch, &sideinfo, gr, ch);
+			l3_huffman_decode(maindata_stream, cur_ch, is);
+			l3_requantize(cur_ch, is, xr[ch][gr]);
+		}
 
-			l3_decode_scalefactors(maindata_stream, &sideinfo, gr, ch);
-			l3_huffman_decode(maindata_stream, cur_ch, gr, ch, part2_start + cur_ch->part2_3_len - 1, is[ch][gr]);
+		if (cur_frame->nch == 2)
+			l3_do_stereo(cur_frame, &sideinfo.gr[gr], gr, xr);
 
-			l3_requantize_samples(cur_ch, gr, ch);
+		for (int ch = 0; ch < cur_frame->nch; ++ch) {
+			struct ch_info* const cur_ch = &sideinfo.gr[gr].ch[ch];
+			l3_antialias(cur_ch, xr[ch][gr]);
+			l3_hybrid(cur_ch, ch, xr[ch][gr]);
+
+			/* frequency inversion */
+			for (int sb = 1; sb < 32; sb += 2) {
+				for (int i = 1; i < 18; i += 2) {
+					xr[ch][gr][sb * 18 + i] = -xr[ch][gr][sb * 18 + i];
+				}
+			}
+
+			/* polyphase subband synthesis */
+			synthesis_subband_filter(xr[ch][gr], &handle->pcm, ch, cur_frame->nch);
 		}
 	}
 
@@ -1509,46 +1473,46 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 	//	return -1;
 	//}
 
-	for (int gr = 0; gr < 2; ++gr) {
-		for (int ch = 0; ch < frame->nch; ++ch) {
-			//struct ch_info* cur_ch = &sideinfo.info_ch;
+	//for (int gr = 0; gr < 2; ++gr) {
+	//	for (int ch = 0; ch < frame->nch; ++ch) {
+	//		//struct ch_info* cur_ch = &sideinfo.info_ch;
 
-			l3_decode_scalefactors(maindata_stream, &sideinfo, gr, ch);
-			if (!l3_huffman_decode(maindata_stream, &sideinfo, gr, ch)) {
-				fprintf(stderr, "[W] nonzero_len == 0\n");
-			}
+	//		l3_decode_scalefactors(maindata_stream, &sideinfo, gr, ch);
+	//		if (!l3_huffman_decode(maindata_stream, &sideinfo, gr, ch)) {
+	//			fprintf(stderr, "[W] nonzero_len == 0\n");
+	//		}
 
-			l3_requantize_samples(frame, &sideinfo, gr, ch);
-		}
+	//		l3_requantize_samples(frame, &sideinfo, gr, ch);
+	//	}
 
-		if (frame->is_MS || frame->is_Intensity) {
-			l3_do_stereo(frame, &sideinfo, gr);
-		}
+	//	if (frame->is_MS || frame->is_Intensity) {
+	//		l3_do_stereo(frame, &sideinfo, gr);
+	//	}
 
 
-	}
+	//}
 
-	static float samples_tmp[2][SBLIMIT];
-	for (int ch = 0; ch < frame->nch; ++ch) {
-		for (int gr = 0; gr < 2; ++gr) {
-			struct ch_info* cur_ch = &sideinfo.info_ch[ch][gr];
-			l3_antialias(cur_ch);
-			l3_hybrid(cur_ch, ch);
+	//static float samples_tmp[2][SBLIMIT];
+	//for (int ch = 0; ch < frame->nch; ++ch) {
+	//	for (int gr = 0; gr < 2; ++gr) {
+	//		struct ch_info* cur_ch = &sideinfo.info_ch[ch][gr];
+	//		l3_antialias(cur_ch);
+	//		l3_hybrid(cur_ch, ch);
 
-			for (int ss = 0, i, sb; ss < SSLIMIT; ss += 2) {
-				for (i = ss, sb = 0; sb < 32; ++sb, i += 18)
-					samples_tmp[ch][sb] = cur_ch->buf[i];
-				synthesis_subband_filter(samples_tmp[ch], pcm_out, write_ptr, ch, frame->nch);
+	//		for (int ss = 0, i, sb; ss < SSLIMIT; ss += 2) {
+	//			for (i = ss, sb = 0; sb < 32; ++sb, i += 18)
+	//				samples_tmp[ch][sb] = cur_ch->buf[i];
+	//			synthesis_subband_filter(samples_tmp[ch], pcm_out, write_ptr, ch, frame->nch);
 
-				for (i = ss + 1, sb = 0; sb < 32; sb += 2, i += 36) {
-					samples_tmp[ch][sb] = cur_ch->buf[i];
+	//			for (i = ss + 1, sb = 0; sb < 32; sb += 2, i += 36) {
+	//				samples_tmp[ch][sb] = cur_ch->buf[i];
 
-					samples_tmp[ch][sb + 1] = -cur_ch->buf[i + 18];	//多相频率倒置(INVERSE QUANTIZE SAMPLES)
-				}
-				synthesis_subband_filter(samples_tmp[ch], pcm_out, write_ptr, ch, frame->nch);
-			}
-		}
-	}
+	//				samples_tmp[ch][sb + 1] = -cur_ch->buf[i + 18];	//多相频率倒置(INVERSE QUANTIZE SAMPLES)
+	//			}
+	//			synthesis_subband_filter(samples_tmp[ch], pcm_out, write_ptr, ch, frame->nch);
+	//		}
+	//	}
+	//}
 
 	//if (frame->is_MS || frame->is_Intensity) {
 	//	if (sideinfo->ch[0].gr[gr].nonzero_len <= sideinfo->ch[1].gr[gr].nonzero_len)
