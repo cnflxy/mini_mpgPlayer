@@ -37,8 +37,7 @@ void decode_id3v1(struct bs* const bstream)
 			}
 			if (bstream->byte_ptr[126] && bstream->byte_ptr[126] != ' ')
 				printf("track: %d\n", bstream->byte_ptr[126]);
-			printf("genre: %d\n", bstream->byte_ptr[127]);
-			putchar('\n');
+			printf("genre: %d\n\n", bstream->byte_ptr[127]);
 		}
 	}
 
@@ -76,9 +75,9 @@ int decode_id3v2(struct bs* const bstream, unsigned* const size)
 #define VBR_TAG_INFO	0x6f666e49U	// CBR (Constant Bit Rate).
 #define VBR_TAG_XING	0x676e6958U	// VBR/ABR (Variable Bit Rate/Average Bit Rate).
 
-static int byte2int(const struct bs* const stream, int off)
+static unsigned byte2uint(const struct bs* const stream, int off)
 {
-	int i = stream->byte_ptr[off];
+	unsigned i = stream->byte_ptr[off];
 	i <<= 8;
 	i |= stream->byte_ptr[off + 1];
 	i <<= 8;
@@ -108,14 +107,14 @@ int get_vbr_tag(const struct bs* const bstream, const struct mpeg_frame* const f
 
 	double duration = 0;
 	if (flags & 0x1) {	// Number of Frames
-		int frames = byte2int(bstream, off);
+		unsigned frames = byte2uint(bstream, off);
 		duration = frames * (frame->lsf ? 576.0 : 1152.0) / frame->samplingrate;
 		printf("Number of Frames: %d --> %.2lfsecs\n", frames, duration);
 		off += 4;
 	}
 
 	if (flags & 0x2) { // Size in Bytes
-		int size = byte2int(bstream, off);
+		unsigned size = byte2uint(bstream, off);
 		duration = size / (16.0 * frame->samplingrate * frame->nch / 8);
 		printf("Size in Bytes: %dbytes --> %.2lfsecs\n", size, duration);
 		off += 4;
@@ -127,7 +126,7 @@ int get_vbr_tag(const struct bs* const bstream, const struct mpeg_frame* const f
 	}
 
 	if (flags & 0x8) { // VBR Scale
-		printf("VBR Scale: %d\n", byte2int(bstream, off));
+		printf("VBR Scale: %u\n", byte2uint(bstream, off));
 		off += 4;
 	}
 
