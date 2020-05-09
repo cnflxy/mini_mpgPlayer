@@ -7,7 +7,7 @@ struct bs {
 	FILE* file_ptr;
 
 	unsigned char* bit_buf;
-	unsigned bit_pos;
+	int bit_pos;
 	unsigned char* byte_ptr;
 	unsigned char* end_ptr;
 	const unsigned char* max_ptr;

@@ -66,7 +66,7 @@ static void print_header_info(const struct mpeg_frame* const frame)
 		else if (frame->is_MS && frame->is_Intensity)
 			printf(" (M/S & I/S)");
 	}
-	printf(" %ubytes\n", frame->frame_size);
+	printf(" %ubytes\n\n", frame->frame_size);
 }
 
 unsigned decoder_Run(struct decoder_handle* const handle)
@@ -110,15 +110,15 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 			LOG_E("audio_open", "init the audio output device failed!");
 			return 0;
 		}
+	}
 
-		pcm_out->write_off[0] = pcm_out->read_off = 0;
-		pcm_out->write_off[1] = 2;
-		pcm_out->audio_buf_size = cur_frame->pcm_size * 4;
-		pcm_out->pcm_buf_size = pcm_out->audio_buf_size * 4;
-		if (!(pcm_out->pcm_buf = malloc(pcm_out->pcm_buf_size))) {
-			LOG_E("malloc(pcm_buf)", "init the pcm_stream failed!");
-			return 0;
-		}
+	pcm_out->write_off[0] = pcm_out->read_off = 0;
+	pcm_out->write_off[1] = 2;
+	pcm_out->audio_buf_size = cur_frame->pcm_size * 4;
+	pcm_out->pcm_buf_size = pcm_out->audio_buf_size * 4;
+	if (!(pcm_out->pcm_buf = malloc(pcm_out->pcm_buf_size))) {
+		LOG_E("malloc(pcm_buf)", "init the pcm_stream failed!");
+		return 0;
 	}
 
 	if (get_vbr_tag(handle->file_stream, cur_frame) == 0) {
@@ -132,7 +132,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 
 	do {
 		++frame_count;
-		// print_header_info(&cur_frame);
+		print_header_info(cur_frame);
 
 		if ((stat = l3_decode_samples(handle, frame_count)) == -1)
 			break;
@@ -155,7 +155,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 				pcm_out->write_off[1] = 2;
 			}
 		}
-	} while (decode_next_frame(&cur_frame, handle->file_stream) != -1);
+	} while (decode_next_frame(cur_frame, handle->file_stream) != -1);
 
 	return frame_count;
 }

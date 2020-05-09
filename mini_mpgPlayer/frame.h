@@ -46,6 +46,6 @@ struct mpeg_frame {
 	unsigned pcm_size;
 };
 
-int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bstream);
+int decode_next_frame(struct mpeg_frame* const frame, struct bs* const bstream);
 
 #endif // !_MMP_FRAME_H_

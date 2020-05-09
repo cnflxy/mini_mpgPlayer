@@ -308,12 +308,12 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 	//int x, y, v, i, off = 0, tmp, idx = 0;
 	//struct bs start = { .byte_ptr = maindata_stream->byte_ptr, .bit_pos = maindata_stream->bit_pos };
 
-	if (cur_ch->part2_3_len == 0) {
-		for (is_pos = 0; is_pos < 576; ++is_pos)
-			is[is_pos] = 0;
-		cur_ch->nonzero_len = 0;
-		return;
-	}
+	//if (cur_ch->part2_3_len == 0) {
+	//	for (is_pos = 0; is_pos < 576; ++is_pos)
+	//		is[is_pos] = 0;
+	//	cur_ch->nonzero_len = 0;
+	//	return;
+	//}
 
 	if (cur_ch->part2_3_len != 0) {
 		part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
@@ -354,50 +354,36 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 							point += htab->table[point] & 0xff;
 						point += htab->table[point] & 0xff;
 					} else { /* goto left-child*/
-						while (htab->table[point] >> 8 >= 250)
+						while ((htab->table[point] >> 8) >= 250)
 							point += htab->table[point] >> 8;
 						point += htab->table[point] >> 8;
 					}
 					--part3_len;
-				} while (++bitleft < 32 && part3_len > 0);
-				if (part3_len == 0)
-					break;
+				} while (++bitleft < 32);
 
 				// get linbits
 				if (htab->linbits > 0 && huff_code[0] == 15) {
-					if (part3_len < htab->linbits)
-						break;
 					huff_code[0] += bs_readBits(maindata_stream, htab->linbits);
 					part3_len -= htab->linbits;
-					if (part3_len == 0)
-						break;
 				}
 				// get sign bit
 				if (huff_code[0] > 0) {
 					if (bs_readBit(maindata_stream) == 1)
 						huff_code[0] = -huff_code[0];
 					--part3_len;
-					if (part3_len == 0)
-						break;
 				}
 				is[is_pos++] = huff_code[0];
 
 				// get linbits
 				if (htab->linbits > 0 && huff_code[1] == 15) {
-					if (part3_len < htab->linbits)
-						break;
 					huff_code[1] += bs_readBits(maindata_stream, htab->linbits);
 					part3_len -= htab->linbits;
-					if (part3_len == 0)
-						break;
 				}
 				// get sign bit
 				if (huff_code[1] > 0) {
 					if (bs_readBit(maindata_stream) == 1)
 						huff_code[1] = -huff_code[1];
 					--part3_len;
-					if (part3_len == 0)
-						break;
 				}
 				is[is_pos] = huff_code[1];
 			}
@@ -424,9 +410,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					point += htab->table[point] >> 8;
 				}
 				--part3_len;
-			} while (++bitleft < 32 && part3_len > 0);
-			if (part3_len == 0)
-				break;
+			} while (++bitleft < 32);
 
 			huff_code[3] = (huff_code[0] >> 3) & 0x1;
 			huff_code[2] = (huff_code[0] >> 2) & 0x1;
@@ -437,8 +421,6 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 				if (bs_readBit(maindata_stream) == 1)
 					huff_code[3] = -huff_code[3];
 				--part3_len;
-				if (part3_len == 0)
-					break;
 			}
 			is[is_pos++] = huff_code[3];
 
@@ -446,8 +428,6 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 				if (bs_readBit(maindata_stream) == 1)
 					huff_code[2] = -huff_code[2];
 				--part3_len;
-				if (part3_len == 0)
-					break;
 			}
 			is[is_pos++] = huff_code[2];
 
@@ -455,8 +435,6 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 				if (bs_readBit(maindata_stream) == 1)
 					huff_code[1] = -huff_code[1];
 				--part3_len;
-				if (part3_len == 0)
-					break;
 			}
 			is[is_pos++] = huff_code[1];
 
@@ -464,8 +442,6 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 				if (bs_readBit(maindata_stream) == 1)
 					huff_code[0] = -huff_code[0];
 				--part3_len;
-				if (part3_len == 0)
-					break;
 			}
 			is[is_pos] = huff_code[0];
 		}
@@ -475,13 +451,16 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 	//	is_pos -= 4;
 	//}
 
+	if (part3_len < 0) {
+		is_pos -= 4;
+		bs_backBits(maindata_stream, -part3_len);
+	} else if (part3_len > 0)
+		bs_skipBits(maindata_stream, part3_len);
+
 	cur_ch->nonzero_len = is_pos;
 
 	while (is_pos < 576)
 		is[is_pos++] = 0;
-
-	if (part3_len > 0)
-		bs_skipBits(maindata_stream, part3_len);
 }
 
 static void l3_requantize_long(const struct ch_info* const cur_ch, const int sfb, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
@@ -821,7 +800,7 @@ static void l3_antialias(const struct ch_info* const cur_ch, float xr[SBLIMIT * 
 	} else
 		sblimit = 32 * 18;
 
-	for (int sb = 0; sb < sblimit; sb += 18) {
+	for (int sb = 1 * 18; sb < sblimit; sb += 18) {
 		for (int i = 0; i < 8; ++i) {
 			const float lb = xr[sb - i - 1];
 			const float ub = xr[sb + i];
@@ -1381,6 +1360,8 @@ void l3_init(const struct mpeg_header* const header)
 	init_synthesis_tabs();
 }
 
+static short is[SBLIMIT * SSLIMIT];
+static float xr[2][2][SBLIMIT * SSLIMIT];
 int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 {
 	const struct mpeg_frame* const cur_frame = &handle->cur_frame;
@@ -1388,8 +1369,6 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 	struct bs* const sideinfo_stream = handle->sideinfo_stream;
 	struct bs* const maindata_stream = handle->maindata_stream;
 	struct l3_sideinfo sideinfo = { 0 };
-	short is[SBLIMIT * SSLIMIT];
-	float xr[2][2][SBLIMIT * SSLIMIT];
 	char log_msg_buf[64];
 
 
@@ -1410,8 +1389,11 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 		}
 		return 1;
 	}
-	maindata_stream->byte_ptr -= sideinfo.main_data_begin;
-	maindata_stream->bit_pos = 0;
+
+	int discard = bs_Avaliable(maindata_stream) - sideinfo.main_data_begin;
+	bs_skipBytes(maindata_stream, discard);
+	//maindata_stream->byte_ptr -= sideinfo.main_data_begin;
+	//maindata_stream->bit_pos = 0;
 
 	if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, 0, cur_frame->maindata_size) != cur_frame->maindata_size) {
 		sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);

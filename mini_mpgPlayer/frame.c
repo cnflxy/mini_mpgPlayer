@@ -79,7 +79,7 @@ static int sync_frame(struct mpeg_header* const header, struct bs* const bstream
 	unsigned h = 0, need_read = 4, skipped = 0, tmp;
 
 	while (need_read) {
-		if ((tmp = bs_Length(bstream)) < need_read) {
+		if ((tmp = bs_Avaliable(bstream)) < need_read) {
 			tmp = need_read + 4 - tmp;
 			if (tmp != bs_Prefect(bstream, tmp))
 				return -1;
@@ -128,7 +128,7 @@ static int get_frame_size(const struct mpeg_frame* const frame)
 	return 0;
 }
 
-int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bstream)
+int decode_next_frame(struct mpeg_frame* const frame, struct bs* const bstream)
 {
 	struct mpeg_header* const header = &frame->header;
 
@@ -160,7 +160,7 @@ int decode_next_frame(struct mpeg_frame* const frame, struct bitstream* const bs
 		frame->maindata_size = frame->frame_size - frame->header_size - frame->sideinfo_size;
 	else frame->maindata_size = 0;
 
-	unsigned need = bs_Length(bstream);
+	unsigned need = bs_Avaliable(bstream);
 	if (need < frame->frame_size) {
 		need = frame->frame_size - need;
 		if (need != bs_Prefect(bstream, need)) {

@@ -77,15 +77,16 @@ unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 			len = bs_Capacity(bstream);
 
 		if (len > bs_freeSpace(bstream)) {
+			unsigned tmp = bstream->end_ptr - bstream->byte_ptr;
 			unsigned need = len - bs_freeSpace(bstream);
 			if (need * 2 >= bs_Length(bstream)) {
 				memcpy(bstream->end_ptr - need * 2, bstream->end_ptr - need, need);
 				bstream->end_ptr -= need;
-				bstream->byte_ptr = bstream->end_ptr - need;
+				bstream->byte_ptr = bstream->end_ptr - tmp;
 			} else {
 				memcpy(bstream->bit_buf, bstream->end_ptr - need, need);
 				bstream->end_ptr = bstream->bit_buf + need;
-				bstream->byte_ptr = bstream->bit_buf;
+				bstream->byte_ptr = bstream->end_ptr - tmp;
 			}
 
 			if (len > bs_freeSpace(bstream))
@@ -104,7 +105,7 @@ unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 // @@@ byte_pos[0] ___ end_pos ### max_len
 unsigned bs_Prefect(struct bs* bstream, unsigned len)
 {
-	if(len = bs_Append(bstream, NULL, 0, len)) {
+	if(len == bs_Append(bstream, NULL, 0, len)) {
 		len = fread(bstream->end_ptr, 1, len, bstream->file_ptr);
 		bstream->end_ptr += len;
 	}
@@ -138,7 +139,7 @@ unsigned bs_skipBits(struct bs* bstream, unsigned nBits)
 unsigned bs_backBits(struct bs* bstream, unsigned nBits)
 {
 	bstream->bit_pos -= nBits;
-	bstream->byte_ptr -= bstream->bit_pos >> 3;
+	bstream->byte_ptr += bstream->bit_pos >> 3;
 	bstream->bit_pos &= 7;
 
 	return nBits;
@@ -214,7 +215,7 @@ unsigned bs_readBits(struct bs* bstream, unsigned nBits)
 
 unsigned bs_readByte(struct bs* bstream)
 {
-	unsigned byte = *bstream->bit_buf++;
+	unsigned byte = *bstream->byte_ptr++;
 	return byte;
 }
 
