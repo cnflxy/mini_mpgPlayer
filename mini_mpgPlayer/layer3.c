@@ -10,7 +10,8 @@
 #define	SBLIMIT	32
 #define SSLIMIT	18
 
-#define	PI		3.141592653589793
+#define M_PI       3.14159265358979323846
+#define M_SQRT2	1.41421356237309504880
 
 // scalefactor bit lengths
 static const unsigned char sflen_table[2][16] = {
@@ -27,9 +28,9 @@ static const unsigned short __sfb_index_long[3][23] = {
 };
 // __sfb_index_short[sampling_frequency]
 static const unsigned short __sfb_index_short[3][14] = {
-	{ 0, 4, 8, 12, 16, 22, 30, 40, 52, 66, 84, 106, 136, 192 },	// 44.1kHz
-	{ 0, 4, 8, 12, 16, 22, 28, 38, 50, 64, 80, 100, 126, 192 },	// 48kHz
-	{ 0, 4, 8, 12, 16, 22, 30, 42, 58, 78, 104, 138, 180, 192 }	// 32kHz
+	{ 0, 4 * 3, 8 * 3, 12 * 3, 16 * 3, 22 * 3, 30 * 3, 40 * 3, 52 * 3, 66 * 3, 84 * 3, 106 * 3, 136 * 3, 192 * 3 },	// 44.1kHz
+	{ 0, 4 * 3, 8 * 3, 12 * 3, 16 * 3, 22 * 3, 28 * 3, 38 * 3, 50 * 3, 64 * 3, 80 * 3, 100 * 3, 126 * 3, 192 * 3 },	// 48kHz
+	{ 0, 4 * 3, 8 * 3, 12 * 3, 16 * 3, 22 * 3, 30 * 3, 42 * 3, 58 * 3, 78 * 3, 104 * 3, 138 * 3, 180 * 3, 192 * 3 }	// 32kHz
 };
 
 // MPEG-1.0 scalefactor band widths
@@ -65,7 +66,7 @@ static struct {
 } rzero;
 
 // gain_powreq[i] = i^(4/3)
-static double gain_powreq[8207];
+static float gain_powreq[8207];
 
 // gain_pow2_is[i] = 2^i
 //static float gain_pow2_is[256 + 118 + 4];
@@ -78,8 +79,8 @@ c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037}
 cs[i] = 1 / sqrt(1 + c[i]^2)
 ca[i] = c[i] / sqrt(1 + c[i]^2)
 */
-static const double __c[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037 };
-static double cs[8], ca[8];
+static const double __Ci[] = { -0.6, -0.535, -0.33, -0.185, -0.095, -0.041, -0.0142, -0.0037 };
+static float cs[8], ca[8];
 
 /*
 IMDCT coefficients for short blocks and long blocks
@@ -87,10 +88,10 @@ IMDCT coefficients for short blocks and long blocks
 imdct_s[i][k] = cos(PI * (2 * i + 7) * (2 * k + 1) / 24) = cos(PI * (i + 3.5) * (k + 0.5) / 12)
 imdct_l[i][k] = cos(PI * (2 * i + 19) * (2 * k + 1) / 72) = cos(PI * (i + 9.5) * (k + 0.5) / 36)
 */
-static double imdct_s[6][12];
-static double imdct_l[18][36];
+static float imdct_s[6][12];
+static float imdct_l[18][36];
 
-static double imdct_window[4][36];
+static float imdct_window[4][36];
 
 #if 0
 /*
@@ -258,44 +259,48 @@ static void l3_decode_scalefactors(struct bs* const maindata_stream, struct ch_i
 			for (sb = 0; sb < 6; ++sb)
 				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
 			cur_ch->part2_len += slen0 * 6;
-		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sb = 0; sb < 6; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
+		//} else {
+		//	/* Copy scalefactors from granule 0 to granule 1 */
+		//	for (sb = 0; sb < 6; ++sb)
+		//		cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+		//}
 
 		/* Scale factor bands 6-10 */
 		if (si->scfsi[ch][1] == 0 || gr == 0) {
 			for (sb = 6; sb < 11; ++sb)
 				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
 			cur_ch->part2_len += slen0 * 5;
-		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sb = 6; sb < 11; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
+		//} else {
+		//	/* Copy scalefactors from granule 0 to granule 1 */
+		//	for (sb = 6; sb < 11; ++sb)
+		//		cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+		//}
 
 		/* Scale factor bands 11-15 */
 		if (si->scfsi[ch][2] == 0 || gr == 0) {
 			for (sb = 11; sb < 16; ++sb)
 				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen1);
 			cur_ch->part2_len += slen1 * 5;
-		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sb = 11; sb < 16; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
+		//} else {
+		//	/* Copy scalefactors from granule 0 to granule 1 */
+		//	for (sb = 11; sb < 16; ++sb)
+		//		cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+		//}
 
 		/* Scale factor bands 16-20 */
 		if (si->scfsi[ch][3] == 0 || gr == 0) {
 			for (sb = 16; sb < 21; ++sb)
 				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen1);
 			cur_ch->part2_len += slen1 * 5;
-		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
-			for (sb = 16; sb < 21; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
 		}
+		//} else {
+		//	/* Copy scalefactors from granule 0 to granule 1 */
+		//	for (sb = 16; sb < 21; ++sb)
+		//		cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+		//}
 	}
 }
 
@@ -463,7 +468,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 
 	if (part3_len < 0) {
 		// is_pos -= 4;
-		bs_backBits(maindata_stream, -part3_len);
+		// bs_backBits(maindata_stream, -part3_len);
 	} else if (part3_len > 0)
 		bs_skipBits(maindata_stream, part3_len);
 
@@ -476,13 +481,13 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 static void l3_requantize_long(const struct ch_info* const cur_ch, const int sfb, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
 {
 	const double sf_mult = cur_ch->scalefac_scale != 0 ? 1.0 : 0.5;
-	double tmp1, tmp2, tmp3;
+	float tmp1, tmp2, tmp3;
 
 	if (sfb < 21)
-		tmp1 = pow(2.0, -(sf_mult * ((double)cur_ch->scalefac_l[sfb] + pretab[cur_ch->preflag][sfb])));
-	else tmp1 = 1.0;
+		tmp1 = (float)pow(2.0, -(sf_mult * ((double)cur_ch->scalefac_l[sfb] + pretab[cur_ch->preflag][sfb])));
+	else tmp1 = 1.0f;
 
-	tmp2 = pow(2.0, 0.25 * (cur_ch->global_gain - 210.0));
+	tmp2 = (float)pow(2.0, 0.25 * (cur_ch->global_gain - 210.0));
 
 	if (is[pos] < 0)
 		tmp3 = -gain_powreq[-is[pos]];
@@ -494,13 +499,13 @@ static void l3_requantize_long(const struct ch_info* const cur_ch, const int sfb
 static void l3_requantize_short(const struct ch_info* const cur_ch, const int sfb, const int window, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
 {
 	const double sf_mult = cur_ch->scalefac_scale != 0 ? 1.0 : 0.5;
-	double tmp1, tmp2, tmp3;
+	float tmp1, tmp2, tmp3;
 
 	if (sfb < 12)
-		tmp1 = pow(2.0, -(sf_mult * cur_ch->scalefac_s[sfb * 3 + window]));
-	else tmp1 = 1.0;
+		tmp1 = (float)pow(2.0, -(sf_mult * cur_ch->scalefac_s[sfb * 3 + window]));
+	else tmp1 = 1.0f;
 
-	tmp2 = pow(2.0, 0.25 * (cur_ch->global_gain - 210.0 - cur_ch->subblock_gain[window] * 8.0));
+	tmp2 = (float)pow(2.0, 0.25 * (cur_ch->global_gain - 210.0 - cur_ch->subblock_gain[window] * 8.0));
 
 	if (is[pos] < 0)
 		tmp3 = -gain_powreq[-is[pos]];
@@ -533,13 +538,13 @@ static void l3_requantize(const struct ch_info* const cur_ch, const short is[SBL
 					l3_requantize_long(cur_ch, sfb, is_pos, is, xr);
 				}
 
-				for (is_pos = 36, sfb = 3, next_sfb = cur_sfb_table.index_short[sfb + 1] * 3, width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
+				for (is_pos = 36, sfb = 3, next_sfb = cur_sfb_table.index_short[sfb + 1], width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
 					if (is_pos == next_sfb) {
 						for (i = 0; i < 3 * width; ++i) {
-							xr[3 * (cur_sfb_table.index_short[12] + sfb) + i] = re[i];
+							xr[cur_sfb_table.index_short[12] + sfb * 3 + i] = re[i];
 						}
 						++sfb;
-						next_sfb = cur_sfb_table.index_short[sfb + 1] * 3;
+						next_sfb = cur_sfb_table.index_short[sfb + 1];
 						width = cur_sfb_table.width_short[sfb];
 					}
 					for (window = 0; window < 3; ++window) {
@@ -551,13 +556,13 @@ static void l3_requantize(const struct ch_info* const cur_ch, const short is[SBL
 					}
 				}
 			} else { /* pure SHORT BLOCK */
-				for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_short[sfb + 1] * 3, width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
+				for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_short[sfb + 1], width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
 					if (is_pos == next_sfb) {
 						for (i = 0; i < 3 * width; ++i) {
-							xr[3 * (cur_sfb_table.index_short[12] + sfb) + i] = re[i];
+							xr[cur_sfb_table.index_short[12] + sfb * 3 + i] = re[i];
 						}
 						++sfb;
-						next_sfb = cur_sfb_table.index_short[sfb + 1] * 3;
+						next_sfb = cur_sfb_table.index_short[sfb + 1];
 						width = cur_sfb_table.width_short[sfb];
 					}
 					for (window = 0; window < 3; ++window) {
@@ -571,7 +576,7 @@ static void l3_requantize(const struct ch_info* const cur_ch, const short is[SBL
 			}
 
 			for (i = 0; i < 3 * width; ++i) {
-				xr[3 * (cur_sfb_table.index_short[12] + sfb) + i] = re[i];
+				xr[cur_sfb_table.index_short[12] + sfb * 3 + i] = re[i];
 			}
 		} else { /* pure LONG BLOCK */
 			for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_long[sfb + 1]; is_pos < cur_ch->nonzero_len; ++is_pos) {
@@ -595,10 +600,10 @@ static void l3_do_ms_stereo(struct gr_info* const cur_gr, const int gr, float xr
 	int max_len = max(cur_gr->ch[0].nonzero_len, cur_gr->ch[1].nonzero_len);
 	//cur_gr->ch[0].nonzero_len = cur_gr->ch[1].nonzero_len = max_len;
 
-	const double v = sqrt(2.0);
+	//const double v = sqrt(2.0);
 	for (int i = 0; i < max_len; ++i) {
-		const double v0 = (xr[0][gr][i] + xr[1][gr][i]) / v;
-		const double v1 = (xr[0][gr][i] - xr[1][gr][i]) / v;
+		const float v0 = (float)(((double)xr[0][gr][i] + xr[1][gr][i]) / M_SQRT2);
+		const float v1 = (float)(((double)xr[0][gr][i] - xr[1][gr][i]) / M_SQRT2);
 		xr[0][gr][i] = v0;
 		xr[1][gr][i] = v1;
 	}
@@ -628,8 +633,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 					is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 				}
 				for (i = sfb_start; i < sfb_stop; ++i) {
-					xr[0][gr][i] *= is_ratio_l;
-					xr[1][gr][i] *= is_ratio_r;
+					xr[0][gr][i] *= (float)is_ratio_l;
+					xr[1][gr][i] *= (float)is_ratio_r;
 				}
 			}
 
@@ -640,7 +645,7 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 				for (window = 0; window < 3; ++window) {
 					if ((is_possb = cur_gr->ch[0].scalefac_s[sfb * 3 + window]) == 7)
 						continue;
-					sfb_start = cur_sfb_table.index_short[sfb] * 3 + width * window;
+					sfb_start = cur_sfb_table.index_short[sfb] + width * window;
 					sfb_stop = sfb_start + width;
 					if (is_possb == 6) {
 						is_ratio_l = 1.0;
@@ -650,8 +655,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 						is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 					}
 					for (i = sfb_start; i < sfb_stop; ++i) {
-						xr[0][gr][i] *= is_ratio_l;
-						xr[1][gr][i] *= is_ratio_r;
+						xr[0][gr][i] *= (float)is_ratio_l;
+						xr[1][gr][i] *= (float)is_ratio_r;
 					}
 				}
 			}
@@ -663,7 +668,7 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 				for (window = 0; window < 3; ++window) {
 					if ((is_possb = cur_gr->ch[0].scalefac_s[sfb * 3 + window]) == 7)
 						continue;
-					sfb_start = cur_sfb_table.index_short[sfb] * 3 + width * window;
+					sfb_start = cur_sfb_table.index_short[sfb] + width * window;
 					sfb_stop = sfb_start + width;
 					if (is_possb == 6) {
 						is_ratio_l = 1.0;
@@ -673,8 +678,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 						is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 					}
 					for (i = sfb_start; i < sfb_stop; ++i) {
-						xr[0][gr][i] *= is_ratio_l;
-						xr[1][gr][i] *= is_ratio_r;
+						xr[0][gr][i] *= (float)is_ratio_l;
+						xr[1][gr][i] *= (float)is_ratio_r;
 					}
 				}
 			}
@@ -696,8 +701,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 				is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 			}
 			for (i = sfb_start; i < sfb_stop; ++i) {
-				xr[0][gr][i] *= is_ratio_l;
-				xr[1][gr][i] *= is_ratio_r;
+				xr[0][gr][i] *= (float)is_ratio_l;
+				xr[1][gr][i] *= (float)is_ratio_r;
 			}
 		}
 	}
@@ -727,8 +732,8 @@ static void l3_antialias(const struct ch_info* const cur_ch, float xr[SBLIMIT * 
 
 	for (int sb = 1 * 18; sb < sblimit; sb += 18) {
 		for (int i = 0; i < 8; ++i) {
-			const double lb = xr[sb - i - 1];
-			const double ub = xr[sb + i];
+			const float lb = xr[sb - i - 1];
+			const float ub = xr[sb + i];
 			xr[sb - i - 1] = lb * cs[i] - ub * ca[i];
 			xr[sb + i] = ub * cs[i] + lb * ca[i];
 		}
@@ -739,11 +744,10 @@ static void imdct12(const float xr[18], float rawout[36])
 {
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 12; ++j) {
-			double sum = 0.0;
+			rawout[6 * i + j + 6] = 0.0f;
 			for (int k = 0; k < 6; ++k) {
-				sum += xr[i + 3 * k] * imdct_s[k][j];
+				rawout[6 * i + j + 6] += xr[i + 3 * k] * imdct_s[k][j] * imdct_window[2][j];
 			}
-			rawout[6 * i + j + 6] += sum * imdct_window[2][j];
 		}
 	}
 }
@@ -751,11 +755,10 @@ static void imdct12(const float xr[18], float rawout[36])
 static void imdct36(const float xr[18], float rawout[36], unsigned char block_type)
 {
 	for (int i = 0; i < 36; ++i) {
-		double sum = 0.0;
+		rawout[i] = 0.0f;
 		for (int j = 0; j < 18; ++j) {
-			sum += xr[j] * imdct_l[j][i];
+			rawout[i] += xr[j] * imdct_l[j][i] * imdct_window[block_type][i];
 		}
-		rawout[i] = sum * imdct_window[block_type][i];
 	}
 }
 
@@ -796,59 +799,58 @@ void l3_init(const struct mpeg_header* const header)
 
 	int i, k;
 	for (i = 0; i < 8207; ++i)
-		gain_powreq[i] = pow((double)i, 4.0 / 3.0);
+		gain_powreq[i] = (float)pow((double)i, 4.0 / 3.0);
 
 	//for (i = -256; i < 118 + 4; ++i)
 	//	gain_pow2_is[i + 256] = (float)pow(2.0, (i + 210.0) * -1.0 / 4.0);
 
-	double div_c;
 	for (i = 0; i < 8; ++i) {
-		div_c = sqrt(1.0 + pow(__c[i], 2.0));
-		cs[i] = 1.0 / div_c;
-		ca[i] = __c[i] / div_c;
+		double sq = sqrt(1.0 + __Ci[i] * __Ci[i]);
+		cs[i] = (float)(1.0 / sq);
+		ca[i] = (float)(__Ci[i] / sq);
 	}
 
 	{
 		/* blocktype 0*/
 		for (i = 0; i < 36; ++i) {
-			imdct_window[0][i] = sin(PI * (i + 0.5) / 36.0);
+			imdct_window[0][i] = (float)sin(M_PI * (i + 0.5) / 36.0);
 		}
 		/* Blocktype 1 */
 		for (i = 0; i < 18; ++i) {
-			imdct_window[1][i] = sin(PI * (i + 0.5) / 36.0);
+			imdct_window[1][i] = (float)sin(M_PI * (i + 0.5) / 36.0);
 		}
 		for (i = 18; i < 24; ++i) {
-			imdct_window[1][i] = 1.0;
+			imdct_window[1][i] = 1.0f;
 		}
 		for (i = 24; i < 30; ++i) {
-			imdct_window[1][i] = sin(PI * (i + 0.5 - 18.0) / 12.0);
+			imdct_window[1][i] = (float)sin(M_PI * (i + 0.5 - 18.0) / 12.0);
 		}
 		/* Blocktype 2 */
 		for (i = 0; i < 12; ++i) {
-			imdct_window[2][i] = sin(PI * (i + 0.5) / 12.0);
+			imdct_window[2][i] = (float)sin(M_PI * (i + 0.5) / 12.0);
 		}
 		/* Blocktype 3 */
 		for (i = 6; i < 12; ++i) {
-			imdct_window[3][i] = sin(PI * (i + 0.5 - 6.0) / 12.0);
+			imdct_window[3][i] = (float)sin(M_PI * (i + 0.5 - 6.0) / 12.0);
 		}
 		for (i = 12; i < 18; ++i) {
 			imdct_window[3][i] = 1.0;
 		}
 		for (i = 18; i < 36; ++i) {
-			imdct_window[3][i] = sin(PI * (i + 0.5) / 36.0);
+			imdct_window[3][i] = (float)sin(M_PI * (i + 0.5) / 36.0);
 		}
 	}
 
 	for (i = 0; i < 6; ++i) {
 		for (k = 0; k < 12; ++k) {
-			imdct_s[i][k] = cos(PI * (2.0 * k + 7.0) * (2.0 * i + 1.0) / 24.0);
+			imdct_s[i][k] = (float)cos(M_PI * (2.0 * k + 7.0) * (2.0 * i + 1.0) / 24.0);
 		}
 		// window_s[i] = sin(PI * (2.0 * i + 1.0) / 24.0);
 	}
 
 	for (i = 0; i < 18; ++i) {
 		for (k = 0; k < 36; ++k) {
-			imdct_l[i][k] = cos(PI * (2.0 * k + 19.0) * (2.0 * i + 1.0) / 72.0);
+			imdct_l[i][k] = (float)cos(M_PI * (2.0 * k + 19.0) * (2.0 * i + 1.0) / 72.0);
 		}
 		// window_l[i] = sin(PI * (2.0 * i + 1.0) / 72.0);
 	}
@@ -860,7 +862,7 @@ void l3_init(const struct mpeg_header* const header)
 	//	is_table[i] = (float)(is_ratio / (1.0 + is_ratio));
 	//}
 	for (i = 0; i < 6; ++i) {
-		is_ratio[i] = tan(i * PI / 12.0);
+		is_ratio[i] = (float)tan(i * M_PI / 12.0);
 	}
 
 	//float q = sqrt(2);	// # define M_SQRT2	1.41421356237309504880
@@ -908,7 +910,7 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 	int discard = bs_Avaliable(maindata_stream) - sideinfo.main_data_begin;
 	bs_skipBytes(maindata_stream, discard);
 	//maindata_stream->byte_ptr -= sideinfo.main_data_begin;
-	//maindata_stream->bit_pos = 0;
+	// maindata_stream->bit_pos = 0;
 
 	if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, 0, cur_frame->maindata_size) != cur_frame->maindata_size) {
 		sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);
