@@ -33,7 +33,7 @@ struct mpeg_frame {
 	unsigned char is_MS;
 	unsigned char is_Intensity;
 
-	unsigned nch;
+	int nch;
 
 	unsigned bitrate;
 	unsigned samplingrate;

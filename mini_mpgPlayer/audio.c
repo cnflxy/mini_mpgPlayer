@@ -41,7 +41,7 @@ int audio_open(unsigned short nch, unsigned rate)
 	wfx.nChannels = nch;
 	wfx.nSamplesPerSec = rate;
 	wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * wfx.nChannels * wfx.wBitsPerSample / 8;
-	wfx.nBlockAlign = wfx.nAvgBytesPerSec / wfx.nSamplesPerSec;	// wfx.nChannels * wfx.wBitsPerSample / 8
+	wfx.nBlockAlign = (WORD)(wfx.nAvgBytesPerSec / wfx.nSamplesPerSec);	// wfx.nChannels * wfx.wBitsPerSample / 8
 
 	if ((mmr = waveOutOpen(&g_WaveDev, WAVE_MAPPER, &wfx, (DWORD_PTR)waveout_callback, 0, CALLBACK_FUNCTION)) != MMSYSERR_NOERROR) {
 		MessageBoxA(GetConsoleWindow(), "open audio device failed!", "", MB_OK);

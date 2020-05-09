@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "decoder.h"
 #include "layer3.h"
 #include "audio.h"
@@ -35,7 +37,7 @@ struct decoder_handle* decoder_Init(const char* const mp3_file_name, const int o
 	return NULL;
 }
 
-void decoder_Release(const struct decoder_handle** const handle)
+void decoder_Release(struct decoder_handle** const handle)
 {
 	if (handle && *handle) {
 		if ((*handle)->output_flags & OUTPUT_AUDIO)
@@ -57,7 +59,7 @@ static const char* const layer_str[] = { "Reserved", "III", "II", "I" };
 static const char* const mode_str[] = { "Stereo", "Joint-Stereo", "Dual-Channel", "Mono" };
 static void print_header_info(const struct mpeg_frame* const frame)
 {
-	printf("MPEG-%s Layer %s %ukbps %uHz %s", version_str[frame->header.version], layer_str[frame->header.layer], frame->bitrate, frame->samplingrate, mode_str[frame->header.mode]);
+	printf("\nMPEG-%s Layer %s %ukbps %uHz %s", version_str[frame->header.version], layer_str[frame->header.layer], frame->bitrate, frame->samplingrate, mode_str[frame->header.mode]);
 	if (frame->header.layer == LAYER_3 && frame->header.mode == MODE_JointStereo) {
 		if (frame->is_MS && !frame->is_Intensity)
 			printf(" (M/S)");
@@ -66,7 +68,7 @@ static void print_header_info(const struct mpeg_frame* const frame)
 		else if (frame->is_MS && frame->is_Intensity)
 			printf(" (M/S & I/S)");
 	}
-	printf(" %ubytes\n\n", frame->frame_size);
+	printf(" %ubytes\n", frame->frame_size);
 }
 
 unsigned decoder_Run(struct decoder_handle* const handle)
@@ -89,8 +91,6 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 		LOG_E("decode_next_frame", "can't find the first frame!");
 		return 0;
 	}
-
-	print_header_info(cur_frame);
 
 	if (cur_frame->header.version != VERSION_10 || cur_frame->header.layer != LAYER_3) {
 		sprintf(log_msg_buf, "not support the [MPEG %s Layer %s] now!", version_str[cur_frame->header.version], layer_str[cur_frame->header.layer]);
@@ -122,17 +122,18 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 	}
 
 	if (get_vbr_tag(handle->file_stream, cur_frame) == 0) {
+		print_header_info(cur_frame);
 		bs_skipBytes(handle->file_stream, cur_frame->sideinfo_size + cur_frame->maindata_size);
 		if (decode_next_frame(cur_frame, handle->file_stream) == -1) {
 			LOG_E("decode_next_frame", "can't find the first frame!");
 			return 0;
 		}
 		++frame_count;
-	}
+	} else print_header_info(cur_frame);
 
 	do {
 		++frame_count;
-		print_header_info(cur_frame);
+		// print_header_info(cur_frame);
 
 		if ((stat = l3_decode_samples(handle, frame_count)) == -1)
 			break;
@@ -142,7 +143,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 			continue;
 
 		if (pcm_out->write_off[0] >= pcm_out->audio_buf_size + pcm_out->read_off && (cur_frame->nch != 2 || pcm_out->write_off[1] >= pcm_out->audio_buf_size + pcm_out->read_off)) {
-			if (handle->output_flags & OUTPUT_AUDIO && !play_samples(pcm_out->pcm_buf + pcm_out->read_off, pcm_out->audio_buf_size)) {
+			if (handle->output_flags & OUTPUT_AUDIO && -1 == play_samples(pcm_out->pcm_buf + pcm_out->read_off, pcm_out->audio_buf_size)) {
 				sprintf(log_msg_buf, "frame#%u play failed!", frame_count);
 				LOG_E("play_samples", log_msg_buf);
 			}

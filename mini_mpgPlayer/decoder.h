@@ -26,7 +26,7 @@ struct decoder_handle {
 };
 
 struct decoder_handle* decoder_Init(const char* const mp3_file_name, const int output_flags, const char* const wav_file_name);
-void decoder_Release(const struct decoder_handle** const handle);
+void decoder_Release(struct decoder_handle** const handle);
 unsigned decoder_Run(struct decoder_handle* const handle);
 
 #endif // !_MMP_DECODER_H_

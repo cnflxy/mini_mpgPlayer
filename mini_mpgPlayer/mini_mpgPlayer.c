@@ -9,7 +9,7 @@ int main(int argc, char** argv)
 		return 0;
 	}
 
-	struct decoder_handle* decoder = decoder_Init(argv[1], OUTPUT_FILE, "1.wav");
+	struct decoder_handle* decoder = decoder_Init(argv[1], OUTPUT_AUDIO, "1.wav");
 
 	if (!decoder) {
 		LOG_E("decoder_Init", "failed!");
