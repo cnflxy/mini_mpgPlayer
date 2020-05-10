@@ -108,14 +108,14 @@ int get_vbr_tag(const struct bs* const bstream, const struct mpeg_frame* const f
 	double duration = 0;
 	if (flags & 0x1) {	// Number of Frames
 		unsigned frames = byte2uint(bstream, off);
-		duration = frames * (frame->lsf ? 576.0 : 1152.0) / frame->samplingrate;
+		duration = (frames - 1) * (frame->lsf ? 576.0 : 1152.0) / frame->samplingrate;
 		printf("Number of Frames: %d --> %.2lfsecs\n", frames, duration);
 		off += 4;
 	}
 
 	if (flags & 0x2) { // Size in Bytes
 		unsigned size = byte2uint(bstream, off);
-		duration = size / (16.0 * frame->samplingrate * frame->nch / 8);
+		duration = (size - frame->frame_size) / (frame->bitrate * 125.0);
 		printf("Size in Bytes: %dbytes --> %.2lfsecs\n", size, duration);
 		off += 4;
 	}

@@ -66,11 +66,10 @@ static struct {
 } rzero;
 
 // gain_powreq[i] = i^(4/3)
-static float gain_powreq[8207];
+static float gain_powis[8207];
 
 // gain_pow2_is[i] = 2^i
-//static float gain_pow2_is[256 + 118 + 4];
-
+static float gain_pow2[256 + 118 + 4];
 
 /*
 coefficients for aliasing reduction
@@ -207,96 +206,89 @@ static int l3_decode_sideinfo(struct bs* const sideinfo_stream, struct l3_sidein
 	return 0;
 }
 
-static void l3_decode_scalefactors(struct bs* const maindata_stream, struct ch_info* const cur_ch, const struct l3_sideinfo* const si, const int gr, const int ch)
+static void l3_decode_scalefactors(struct bs* const maindata_stream, struct ch_info* const cur_ch, const struct l3_sideinfo* const si, const int gr, const int ch, unsigned scf[2][39])
 {
 	const unsigned char slen0 = sflen_table[0][cur_ch->scalefac_compress];
 	const unsigned char slen1 = sflen_table[1][cur_ch->scalefac_compress];
 	int sb;
-
-	if (cur_ch->part2_3_len == 0) {
-		for (sb = 0; sb < 21; ++sb) {
-			cur_ch->scalefac_l[sb] = 0;
-			cur_ch->scalefac_s[sb] = 0;
-		}
-		for (sb = 23; sb < 36; ++sb)
-			cur_ch->scalefac_s[sb] = 0;
-		cur_ch->part2_len = 0;
-		return;
-	}
 
 	if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
 		if (cur_ch->mixed_block_flag == 1) {
 			// MIXED block
 			cur_ch->part2_len = slen0 * 17 + slen1 * 18;
 			for (sb = 0; sb < 8; ++sb)
-				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen0);
 			for (sb = 9; sb < 18; ++sb)
-				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen0);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen0);
 			for (sb = 18; sb < 36; ++sb)
-				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen1);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen1);
 		} else {
 			// pure SHORT block
 			cur_ch->part2_len = (slen0 + slen1) * 18;
 			for (sb = 0; sb < 18; ++sb)
-				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen0);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen0);
 			for (sb = 18; sb < 36; ++sb)
-				cur_ch->scalefac_s[sb] = bs_readBits(maindata_stream, slen1);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen1);
 		}
+		scf[ch][36] = scf[ch][37] = scf[ch][38] = 0;
 	} else {
 		// LONG types 0,1,3
 		cur_ch->part2_len = 0;
 		/* Scale factor bands 0-5 */
-		if (si->scfsi[ch][0] == 0 || gr == 0) {
+		if (!si->scfsi[ch][0] || !gr) {
 			for (sb = 0; sb < 6; ++sb)
-				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen0);
 			cur_ch->part2_len += slen0 * 6;
 		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
+			/// Copy scalefactors from granule 0 to granule 1
 			for (sb = 0; sb < 6; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+				scf[1][sb] = scf[0][sb];
 		}
 
 		/* Scale factor bands 6-10 */
-		if (si->scfsi[ch][1] == 0 || gr == 0) {
+		if (!si->scfsi[ch][1] || !gr) {
 			for (sb = 6; sb < 11; ++sb)
-				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen0);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen0);
 			cur_ch->part2_len += slen0 * 5;
 		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
+			/// Copy scalefactors from granule 0 to granule 1
 			for (sb = 6; sb < 11; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+				scf[1][sb] = scf[0][sb];
 		}
 
 		/* Scale factor bands 11-15 */
-		if (si->scfsi[ch][2] == 0 || gr == 0) {
+		if (!si->scfsi[ch][2] || !gr) {
 			for (sb = 11; sb < 16; ++sb)
-				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen1);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen1);
 			cur_ch->part2_len += slen1 * 5;
 		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
+			/// Copy scalefactors from granule 0 to granule 1
 			for (sb = 11; sb < 16; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+				scf[1][sb] = scf[0][sb];
 		}
 
 		/* Scale factor bands 16-20 */
-		if (si->scfsi[ch][3] == 0 || gr == 0) {
+		if (!si->scfsi[ch][3] || !gr) {
 			for (sb = 16; sb < 21; ++sb)
-				cur_ch->scalefac_l[sb] = bs_readBits(maindata_stream, slen1);
+				scf[ch][sb] = bs_readBits(maindata_stream, slen1);
 			cur_ch->part2_len += slen1 * 5;
 		} else {
-			/* Copy scalefactors from granule 0 to granule 1 */
+			/// Copy scalefactors from granule 0 to granule 1
 			for (sb = 16; sb < 21; ++sb)
-				cur_ch->scalefac_l[sb] = si->gr[0].ch[ch].scalefac_l[sb];
+				scf[1][sb] = scf[0][sb];
 		}
+		scf[ch][21] = 0;
 	}
 }
 
 static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* const cur_ch, short is[SBLIMIT * SSLIMIT])
 {
-	int region[3], is_pos = 0, bv = cur_ch->big_values * 2, part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
+	unsigned region[3], is_pos = 0;
+	int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
 	const struct huff_tab* htab;
-	unsigned short point, bitleft, treelen, error;
-	short huff_code[4];
+	unsigned short point, bitleft, treelen, error = 0;
+	short x, y, v, w;
+	char log_msg_buf[64];
 
 	if (part3_len > 0) {
 		struct bs end = { .bit_pos = maindata_stream->bit_pos + part3_len, .byte_ptr = maindata_stream->byte_ptr };
@@ -304,7 +296,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 		end.bit_pos &= 7;
 
 		{
-			if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
+			if (cur_ch->win_switch_flag == 1) {
 				region[0] = 36;
 				region[1] = 576;
 			} else {
@@ -314,89 +306,98 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 				region[1] = cur_sfb_table.index_long[r2];
 			}
 
+			unsigned bv = cur_ch->big_values * 2;
+			if (bv > 574) {
+				LOG_W("check_huff_stat", "bv > 574!");
+				bv = 574;
+			}
 			if (bv <= region[0])
-				region[0] = region[1] = bv;
+				region[0] = region[1] = region[2] = bv;
 			else if (bv <= region[1])
-				region[1] = bv;
-			region[2] = bv;
+				region[1] = region[2] = bv;
+			else
+				region[2] = bv;
 		}
 
-		// 解码大值区
-		for (int r = 0; r < 3; ++r) {
+		// 解码 bigvalues 区
+		for (int r = 0; r < 3 && !error; ++r) {
 			htab = ht + cur_ch->table_select[r];
 			treelen = htab->treelen;
-			for (; is_pos < region[r];) {
-				bitleft = 32;
-				error = 1;
-				huff_code[0] = huff_code[1] = point = 0;
-				do {
-					if ((htab->table[point] & 0xff00) == 0) {
-						huff_code[0] = (htab->table[point] >> 4) & 0xf;
-						huff_code[1] = htab->table[point] & 0xf;
-						error = 0;
+			while (is_pos < region[r] && part3_len >= 0) {
+				{
+					bitleft = 32;
+					error = 1;
+					point = 0;
+					do {
+						if (!(htab->table[point] & 0xff00)) {
+							x = (htab->table[point] >> 4) & 0xf;
+							y = htab->table[point] & 0xf;
+							error = 0;
+							break;
+						}
+
+						if (bs_readBit(maindata_stream)) { /* goto right-child*/
+							while ((htab->table[point] & 0xff) >= 250)
+								point += htab->table[point] & 0xff;
+							point += htab->table[point] & 0xff;
+						} else { /* goto left-child*/
+							while ((htab->table[point] >> 8) >= 250)
+								point += htab->table[point] >> 8;
+							point += htab->table[point] >> 8;
+						}
+						--part3_len;
+					} while (--bitleft && point < treelen && part3_len >= 0);
+					if (error) {
+						sprintf(log_msg_buf, "bigvalues: bitleft=%hu point=%hu treelen=%hu part3_len=%d", bitleft, point, treelen, part3_len);
+						LOG_E("check_huff_stat", log_msg_buf);
 						break;
 					}
 
-					if (bs_readBit(maindata_stream) == 1) { /* goto right-child*/
-						while ((htab->table[point] & 0xff) >= 250)
-							point += htab->table[point] & 0xff;
-						point += htab->table[point] & 0xff;
-					} else { /* goto left-child*/
-						while ((htab->table[point] >> 8) >= 250)
-							point += htab->table[point] >> 8;
-						point += htab->table[point] >> 8;
+					if (x) {
+						// get linbits
+						if (htab->linbits && x == 15) {
+							x += bs_readBits(maindata_stream, htab->linbits);
+							part3_len -= htab->linbits;
+						}
+						// get sign bit
+						if (bs_readBit(maindata_stream))
+							x = -x;
+						--part3_len;
 					}
-					--part3_len;
-				} while (--bitleft > 0 && point < treelen);
-				if (error) {
-					LOG_E("check_huff_stat", "error==1!");
-					continue;
-				}
+					is[is_pos++] = x;
 
-				// get linbits
-				if (htab->linbits > 0 && huff_code[0] == 15) {
-					huff_code[0] += bs_readBits(maindata_stream, htab->linbits);
-					part3_len -= htab->linbits;
+					if (y) {
+						// get linbits
+						if (htab->linbits && y == 15) {
+							y += bs_readBits(maindata_stream, htab->linbits);
+							part3_len -= htab->linbits;
+						}
+						// get sign bit
+						if (bs_readBit(maindata_stream))
+							y = -y;
+						--part3_len;
+					}
+					is[is_pos++] = y;
 				}
-				// get sign bit
-				if (huff_code[0] > 0) {
-					if (bs_readBit(maindata_stream) == 1)
-						huff_code[0] = -huff_code[0];
-					--part3_len;
-				}
-
-				// get linbits
-				if (htab->linbits > 0 && huff_code[1] == 15) {
-					huff_code[1] += bs_readBits(maindata_stream, htab->linbits);
-					part3_len -= htab->linbits;
-				}
-				// get sign bit
-				if (huff_code[1] > 0) {
-					if (bs_readBit(maindata_stream) == 1)
-						huff_code[1] = -huff_code[1];
-					--part3_len;
-				}
-
-				is[is_pos++] = huff_code[0];
-				is[is_pos++] = huff_code[1];
 			}
 		}
 
-		// 解码小值区
+		// 解码 count1 区
 		htab = htc + cur_ch->count1table_select;
 		treelen = htab->treelen;
-		for (is_pos = bv; is_pos <= 572 && part3_len >= 0;) {
+		while (is_pos < 572 && part3_len > 0 && !error) {
 			bitleft = 32;
 			error = 1;
-			huff_code[0] = point = 0;
+			point = 0;
 			do {
-				if ((htab->table[point] & 0xff00) == 0) {
-					huff_code[0] = htab->table[point] & 0xf;
+				if (!(htab->table[point] & 0xff00)) {
+					// x = (htab->table[point] >> 4) & 0xf;
+					y = htab->table[point] & 0xf;
 					error = 0;
 					break;
 				}
 
-				if (bs_readBit(maindata_stream) == 1) { /* goto right-child*/
+				if (bs_readBit(maindata_stream)) { /* goto right-child*/
 					while ((htab->table[point] & 0xff) >= 250)
 						point += htab->table[point] & 0xff;
 					point += htab->table[point] & 0xff;
@@ -406,55 +407,66 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					point += htab->table[point] >> 8;
 				}
 				--part3_len;
-			} while (--bitleft > 0 && point < treelen);
+			} while (--bitleft && point < treelen && part3_len >= 0);
 			if (error) {
-				LOG_E("check_huff_stat", "error==1!");
-				continue;
-			}
-
-			huff_code[3] = (huff_code[0] >> 3) & 0x1;
-			huff_code[2] = (huff_code[0] >> 2) & 0x1;
-			huff_code[1] = (huff_code[0] >> 1) & 0x1;
-			huff_code[0] = (huff_code[0] >> 0) & 0x1;
-
-			if (huff_code[3] > 0) {
-				if (bs_readBit(maindata_stream) == 1)
-					huff_code[3] = -huff_code[3];
-				--part3_len;
-			}
-
-			if (huff_code[2] > 0) {
-				if (bs_readBit(maindata_stream) == 1)
-					huff_code[2] = -huff_code[2];
-				--part3_len;
-			}
-
-			if (huff_code[1] > 0) {
-				if (bs_readBit(maindata_stream) == 1)
-					huff_code[1] = -huff_code[1];
-				--part3_len;
-			}
-
-			if (huff_code[0] > 0) {
-				if (bs_readBit(maindata_stream) == 1)
-					huff_code[0] = -huff_code[0];
-				--part3_len;
-			}
-
-			is[is_pos++] = huff_code[3];
-			if (is_pos >= 576)
+				if (part3_len < -1) {
+					sprintf(log_msg_buf, "count1: bitleft=%hu point=%hu treelen=%hu part3_len=%d", bitleft, point, treelen, part3_len);
+					LOG_E("check_huff_stat", log_msg_buf);
+				}
 				break;
-			is[is_pos++] = huff_code[2];
-			if (is_pos >= 576)
-				break;
-			is[is_pos++] = huff_code[1];
-			if (is_pos >= 576)
-				break;
-			is[is_pos++] = huff_code[0];
+			}
+
+			x = (y >> 3) & 0x1;
+			v = (y >> 2) & 0x1;
+			w = (y >> 1) & 0x1;
+			y &= 0x1;
+
+			if (x) {
+				if (bs_readBit(maindata_stream))
+					x = -x;
+				if (--part3_len < 0) {
+					LOG_E("check_huff_stat", "count1: x");
+					break;
+				}
+			}
+
+			if (v) {
+				if (bs_readBit(maindata_stream))
+					v = -v;
+				if (--part3_len < 0) {
+					LOG_E("check_huff_stat", "count1: v");
+					break;
+				}
+			}
+
+			if (w) {
+				if (bs_readBit(maindata_stream))
+					w = -w;
+				if (--part3_len < 0) {
+					LOG_E("check_huff_stat", "count1: w");
+					break;
+				}
+			}
+
+			if (y) {
+				if (bs_readBit(maindata_stream))
+					y = -y;
+				if (--part3_len < 0) {
+					LOG_E("check_huff_stat", "count1: y");
+					break;
+				}
+			}
+
+			is[is_pos++] = x;
+			is[is_pos++] = v;
+			is[is_pos++] = w;
+			is[is_pos++] = y;
 		}
 
-		if (part3_len + 1 < 0) {
-			is_pos -= 4;
+		if (part3_len < 0) {
+			LOG_E("check_huff_stat", "part3_len < 0");
+		} else if (part3_len > 0) {
+			LOG_E("check_huff_stat", "part3_len > 0");
 		}
 
 		maindata_stream->byte_ptr = end.byte_ptr;
@@ -467,142 +479,131 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 		is[is_pos++] = 0;
 }
 
-static void l3_requantize_long(const struct ch_info* const cur_ch, const int sfb, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
-{
-	const double sf_mult = cur_ch->scalefac_scale != 0 ? 1.0 : 0.5;
-	float tmp1, tmp2, tmp3;
-
-	if (sfb < 21)
-		tmp1 = (float)pow(2.0, -(sf_mult * ((double)cur_ch->scalefac_l[sfb] + pretab[cur_ch->preflag][sfb])));
-	else tmp1 = 1.0f;
-
-	tmp2 = (float)pow(2.0, 0.25 * (cur_ch->global_gain - 210.0));
-
-	if (is[pos] < 0)
-		tmp3 = -gain_powreq[-is[pos]];
-	else tmp3 = gain_powreq[is[pos]];
-
-	xr[pos] = tmp1 * tmp2 * tmp3;
-}
-
-static void l3_requantize_short(const struct ch_info* const cur_ch, const int sfb, const int window, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
-{
-	const double sf_mult = cur_ch->scalefac_scale != 0 ? 1.0 : 0.5;
-	float tmp1, tmp2, tmp3;
-
-	if (sfb < 12)
-		tmp1 = (float)pow(2.0, -(sf_mult * cur_ch->scalefac_s[sfb * 3 + window]));
-	else tmp1 = 1.0f;
-
-	tmp2 = (float)pow(2.0, 0.25 * (cur_ch->global_gain - 210.0 - cur_ch->subblock_gain[window] * 8.0));
-
-	if (is[pos] < 0)
-		tmp3 = -gain_powreq[-is[pos]];
-	else tmp3 = gain_powreq[is[pos]];
-
-	xr[pos] = tmp1 * tmp2 * tmp3;
-}
-
-//static void l3_reorder(const struct ch_info* const cur_ch, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
+//static void l3_requantize_long(const struct ch_info* const cur_ch, const int sfb, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
 //{
-//	int sfb = 0, next_sfb, is_pos = 0, window, width, i;
+//	const double sf_mult = cur_ch->scalefac_scale != 0 ? 1.0 : 0.5;
+//	float tmp1, tmp2, tmp3;
 //
+//	if (sfb < 21)
+//		tmp1 = (float)pow(2.0, -(sf_mult * ((double)cur_ch->scalefac_l[sfb] + pretab[cur_ch->preflag][sfb])));
+//	else tmp1 = 1.0f;
 //
+//	tmp2 = (float)pow(2.0, 0.25 * (cur_ch->global_gain - 210.0));
+//
+//	if (is[pos] < 0)
+//		tmp3 = -gain_powis[-is[pos]];
+//	else tmp3 = gain_powis[is[pos]];
+//
+//	xr[pos] = tmp1 * tmp2 * tmp3;
 //}
+//
+//static void l3_requantize_short(const struct ch_info* const cur_ch, const int sfb, const int window, const int pos, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
+//{
+//	const double sf_mult = cur_ch->scalefac_scale != 0 ? 1.0 : 0.5;
+//	float tmp1, tmp2, tmp3;
+//
+//	if (sfb < 12)
+//		tmp1 = (float)pow(2.0, -(sf_mult * cur_ch->scalefac_s[sfb * 3 + window]));
+//	else tmp1 = 1.0f;
+//
+//	tmp2 = (float)pow(2.0, 0.25 * (cur_ch->global_gain - 210.0 - cur_ch->subblock_gain[window] * 8.0));
+//
+//	if (is[pos] < 0)
+//		tmp3 = -gain_powis[-is[pos]];
+//	else tmp3 = gain_powis[is[pos]];
+//
+//	xr[pos] = tmp1 * tmp2 * tmp3;
+//}
+//
+////static void l3_reorder(const struct ch_info* const cur_ch, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
+////{
+////	int sfb = 0, next_sfb, is_pos = 0, window, width, i;
+////
+////
+////}
 
-static void l3_requantize(const struct ch_info* const cur_ch, const short is[SBLIMIT * SSLIMIT], float xr[SBLIMIT * SSLIMIT])
+static void l3_requantize(const struct ch_info* cur_ch, const struct mpeg_frame* frame, const short is[SBLIMIT * SSLIMIT], const unsigned scf[39], float xr[SBLIMIT * SSLIMIT])
 {
-	int sfb = 0, next_sfb, is_pos = 0, window, width, i;
-	float re[SBLIMIT * SSLIMIT];
+	unsigned is_pos = 0, pow2i = 255 - cur_ch->global_gain, sfb = 0, window, width, xri_start = 0, xri = 0, bi, shift = cur_ch->scalefac_scale + 1;
+	const unsigned char* pre = pretab[cur_ch->preflag];
 
-	if (cur_ch->nonzero_len != 0) {
+	if (frame->is_MS)
+		pow2i += 2;
+
+	if (cur_ch->nonzero_len) {
 		if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
 			if (cur_ch->mixed_block_flag == 1) { /* MIXED BLOCk*/
-				for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_long[sfb + 1]; is_pos < 36; ++is_pos) {
-					if (is_pos == next_sfb) {
-						++sfb;
-						next_sfb = cur_sfb_table.index_long[sfb + 1];
-					}
-
-					l3_requantize_long(cur_ch, sfb, is_pos, is, xr);
-				}
-
-				for (is_pos = 36, sfb = 3, next_sfb = cur_sfb_table.index_short[sfb + 1], width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
-					if (is_pos == next_sfb) {
-						for (i = 0; i < 3 * width; ++i) {
-							xr[cur_sfb_table.index_short[12] + sfb * 3 + i] = re[i];
-						}
-						++sfb;
-						next_sfb = cur_sfb_table.index_short[sfb + 1];
-						width = cur_sfb_table.width_short[sfb];
-					}
-					for (window = 0; window < 3; ++window) {
-						for (i = 0; i < width; ++i) {
-							l3_requantize_short(cur_ch, sfb, window, is_pos, is, xr);
-							re[i * 3 + window] = xr[is_pos];
-							++is_pos;
-						}
+				for (; sfb < 8; ++sfb, ++scf, ++pre) {
+					width = cur_sfb_table.width_long[sfb];
+					for (bi = 0; bi < width; ++bi, ++is_pos) {
+						if (is[is_pos] < 0) {
+							xr[is_pos] = -gain_pow2[pow2i + ((*scf + *pre) << shift)] * gain_powis[-is[is_pos]];
+						} else if (is[is_pos] > 0) {
+							xr[is_pos] = gain_pow2[pow2i + ((*scf + *pre) << shift)] * gain_powis[is[is_pos]];
+						} else
+							xr[is_pos] = 0.0f;
 					}
 				}
-			} else { /* pure SHORT BLOCK */
-				for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_short[sfb + 1], width = cur_sfb_table.width_short[sfb]; is_pos < cur_ch->nonzero_len;) {
-					if (is_pos == next_sfb) {
-						for (i = 0; i < 3 * width; ++i) {
-							xr[cur_sfb_table.index_short[12] + sfb * 3 + i] = re[i];
-						}
-						++sfb;
-						next_sfb = cur_sfb_table.index_short[sfb + 1];
-						width = cur_sfb_table.width_short[sfb];
-					}
-					for (window = 0; window < 3; ++window) {
-						for (i = 0; i < width; ++i) {
-							l3_requantize_short(cur_ch, sfb, window, is_pos, is, xr);
-							re[i * 3 + window] = xr[is_pos];
-							++is_pos;
-						}
-					}
-				}
+				++scf;
+				xri_start = 36;
+				sfb = 3;
 			}
-
-			for (i = 0; i < 3 * width; ++i) {
-				xr[cur_sfb_table.index_short[12] + sfb * 3 + i] = re[i];
+			/* pure SHORT BLOCK */
+			for (; is_pos < cur_ch->nonzero_len; ++sfb) {
+				width = cur_sfb_table.width_short[sfb];
+				for (window = 0; window < 3; ++window, ++scf) {
+					xri = xri_start + window;
+					for (bi = 0; bi < width; ++bi, ++is_pos) {
+						if (is[is_pos] < 0) {
+							xr[xri] = -gain_pow2[pow2i + cur_ch->subblock_gain[window] * 8 + (*scf << shift)] * gain_powis[-is[is_pos]];
+						} else if (is[is_pos] > 0) {
+							xr[xri] = gain_pow2[pow2i + cur_ch->subblock_gain[window] * 8 + (*scf << shift)] * gain_powis[is[is_pos]];
+						} else
+							xr[xri] = 0.0f;
+						xri += 3;
+					}
+				}
+				xri_start = xri - 2;
 			}
 		} else { /* pure LONG BLOCK */
-			for (is_pos = 0, sfb = 0, next_sfb = cur_sfb_table.index_long[sfb + 1]; is_pos < cur_ch->nonzero_len; ++is_pos) {
-				if (is_pos == next_sfb) {
-					++sfb;
-					next_sfb = cur_sfb_table.index_long[sfb + 1];
+			for (; is_pos < cur_ch->nonzero_len; ++sfb, ++scf, ++pre) {
+				width = cur_sfb_table.width_long[sfb];
+				for (bi = 0; bi < width; ++bi, ++is_pos) {
+					if (is[is_pos] < 0) {
+						xr[is_pos] = -gain_pow2[pow2i + ((*scf + *pre) << shift)] * gain_powis[-is[is_pos]];
+					} else if (is[is_pos] > 0) {
+						xr[is_pos] = gain_pow2[pow2i + ((*scf + *pre) << shift)] * gain_powis[is[is_pos]];
+					} else
+						xr[is_pos] = 0.0f;
 				}
-
-				l3_requantize_long(cur_ch, sfb, is_pos, is, xr);
 			}
 		}
 	}
 
 	// 不逆量化0值区,置0.
-	for (; is_pos < 576; ++is_pos)
-		xr[is_pos] = 0.0;
+	while (is_pos < 576)
+		xr[is_pos++] = 0.0f;
 }
 
-static void l3_do_ms_stereo(struct gr_info* const cur_gr, const int gr, float xr[2][2][SBLIMIT * SSLIMIT])
+static void l3_do_ms_stereo(const unsigned max, float xr[2][SBLIMIT * SSLIMIT])
 {
-	int max_len = max(cur_gr->ch[0].nonzero_len, cur_gr->ch[1].nonzero_len);
-	cur_gr->ch[0].nonzero_len = cur_gr->ch[1].nonzero_len = max_len;
-
-	//const double v = sqrt(2.0);
-	for (int i = 0; i < max_len; ++i) {
-		const float v0 = (float)(((double)xr[0][gr][i] + xr[1][gr][i]) / M_SQRT2);
-		const float v1 = (float)(((double)xr[0][gr][i] - xr[1][gr][i]) / M_SQRT2);
-		xr[0][gr][i] = v0;
-		xr[1][gr][i] = v1;
+	for (unsigned i = 0; i < max; ++i) {
+		const float v0 = xr[0][i] + xr[1][i];
+		const float v1 = xr[0][i] - xr[1][i];
+		xr[0][i] = v0;
+		xr[1][i] = v1;
 	}
 }
 
-static void do_intensity_stereo_long();
-static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, float xr[2][2][SBLIMIT * SSLIMIT])
+static void l3_do_intesity_stereo(struct gr_info* cur_gr, const unsigned scf[39], float xr[2][SBLIMIT * SSLIMIT])
 {
 	int sfb, is_possb, width, sfb_start, sfb_stop, i, window;
 	double is_ratio_l, is_ratio_r;
+
+	if (cur_gr->ch[0].mixed_block_flag != cur_gr->ch[1].mixed_block_flag || cur_gr->ch[0].block_type != cur_gr->ch[1].block_type) {
+		LOG_W("check_stereo", "bad stereo!");
+		return;
+	}
 
 	if (cur_gr->ch[0].win_switch_flag == 1 && cur_gr->ch[0].block_type == 2) {
 		// MPEG-1, short block/mixed block
@@ -610,7 +611,7 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 			for (sfb = 0; sfb < 8; ++sfb) {
 				if (cur_sfb_table.index_long[sfb] < cur_gr->ch[1].nonzero_len)
 					continue;
-				if ((is_possb = cur_gr->ch[0].scalefac_l[sfb]) == 7)
+				if ((is_possb = scf[sfb]) == 7)
 					continue;
 				sfb_start = cur_sfb_table.index_long[sfb];
 				sfb_stop = cur_sfb_table.index_long[sfb + 1];
@@ -622,8 +623,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 					is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 				}
 				for (i = sfb_start; i < sfb_stop; ++i) {
-					xr[0][gr][i] *= (float)is_ratio_l;
-					xr[1][gr][i] *= (float)is_ratio_r;
+					xr[0][i] *= (float)is_ratio_l;
+					xr[1][i] *= (float)is_ratio_r;
 				}
 			}
 
@@ -632,7 +633,7 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 					continue;
 				width = cur_sfb_table.width_short[sfb];
 				for (window = 0; window < 3; ++window) {
-					if ((is_possb = cur_gr->ch[0].scalefac_s[sfb * 3 + window]) == 7)
+					if ((is_possb = scf[sfb * 3 + window]) == 7)
 						continue;
 					sfb_start = cur_sfb_table.index_short[sfb] + width * window;
 					sfb_stop = sfb_start + width;
@@ -644,8 +645,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 						is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 					}
 					for (i = sfb_start; i < sfb_stop; ++i) {
-						xr[0][gr][i] *= (float)is_ratio_l;
-						xr[1][gr][i] *= (float)is_ratio_r;
+						xr[0][i] *= (float)is_ratio_l;
+						xr[1][i] *= (float)is_ratio_r;
 					}
 				}
 			}
@@ -655,7 +656,7 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 					continue;
 				width = cur_sfb_table.width_short[sfb];
 				for (window = 0; window < 3; ++window) {
-					if ((is_possb = cur_gr->ch[0].scalefac_s[sfb * 3 + window]) == 7)
+					if ((is_possb = scf[sfb * 3 + window]) == 7)
 						continue;
 					sfb_start = cur_sfb_table.index_short[sfb] + width * window;
 					sfb_stop = sfb_start + width;
@@ -667,8 +668,8 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 						is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 					}
 					for (i = sfb_start; i < sfb_stop; ++i) {
-						xr[0][gr][i] *= (float)is_ratio_l;
-						xr[1][gr][i] *= (float)is_ratio_r;
+						xr[0][i] *= (float)is_ratio_l;
+						xr[1][i] *= (float)is_ratio_r;
 					}
 				}
 			}
@@ -678,7 +679,7 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 		for (sfb = 0; sfb < 21; ++sfb) {
 			if (cur_sfb_table.index_long[sfb] < cur_gr->ch[1].nonzero_len)
 				continue;
-			if ((is_possb = cur_gr->ch[0].scalefac_l[sfb]) == 7)
+			if ((is_possb = scf[sfb]) == 7)
 				continue;
 			sfb_start = cur_sfb_table.index_long[sfb];
 			sfb_stop = cur_sfb_table.index_long[sfb + 1];
@@ -690,44 +691,30 @@ static void l3_do_intesity_stereo(struct gr_info* const cur_gr, const int gr, fl
 				is_ratio_r = 1.0 / (1.0 + is_ratio[is_possb]);
 			}
 			for (i = sfb_start; i < sfb_stop; ++i) {
-				xr[0][gr][i] *= (float)is_ratio_l;
-				xr[1][gr][i] *= (float)is_ratio_r;
+				xr[0][i] *= (float)is_ratio_l;
+				xr[1][i] *= (float)is_ratio_r;
 			}
 		}
 	}
 }
 
-static void l3_do_stereo(const struct mpeg_frame* frame, struct gr_info* const cur_gr, const int gr, float xr[2][2][SBLIMIT * SSLIMIT])
+static void l3_antialias(const struct ch_info* cur_ch, float xr[SBLIMIT * SSLIMIT])
 {
-	if (frame->is_MS == 1)
-		l3_do_ms_stereo(cur_gr, gr, xr);
-
-	if (frame->is_Intensity == 1) {
-		if (cur_gr->ch[0].mixed_block_flag != cur_gr->ch[1].mixed_block_flag || cur_gr->ch[0].block_type != cur_gr->ch[1].block_type) {
-			LOG_W("check_stereo", "bad stereo!");
-			return;
-		}
-		l3_do_intesity_stereo(cur_gr, gr, xr);
-	}
-}
-
-static void l3_antialias(const struct ch_info* const cur_ch, float xr[SBLIMIT * SSLIMIT])
-{
-	int sblimit;
+	int sblimit, sb, i;
 
 	if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
 		if (cur_ch->mixed_block_flag == 0)
 			return;
-		sblimit = 2 * 18;
+		sblimit = SSLIMIT;
 	} else
-		sblimit = 32 * 18;
+		sblimit = cur_ch->nonzero_len - SSLIMIT;
 
-	for (int sb = 1 * 18; sb < sblimit; sb += 18) {
-		for (int i = 0; i < 8; ++i) {
-			const float lb = xr[sb - i - 1] * cs[i] - xr[sb + i] * ca[i];
-			const float ub = xr[sb + i] * cs[i] - xr[sb - i - 1] * ca[i];
-			xr[sb - i - 1] = lb;
-			xr[sb + i] = ub;
+	for (sb = 0; sb < sblimit; sb += SSLIMIT) {
+		for (i = 0; i < 8; ++i) {
+			const float lb = xr[sb + 17 - i] * cs[i] - xr[sb + 18 + i] * ca[i];
+			const float ub = xr[sb + 18 + i] * cs[i] - xr[sb + 17 - i] * ca[i];
+			xr[sb + 17 - i] = lb;
+			xr[sb + 18 + i] = ub;
 		}
 	}
 }
@@ -749,19 +736,19 @@ static void imdct36(const float xr[SSLIMIT], float rawout[36], unsigned char blo
 {
 	for (int i = 0; i < 36; ++i) {
 		float sum = 0.0f;
-		for (int j = 0; j < 18; ++j) {
+		for (int j = 0; j < SSLIMIT; ++j) {
 			sum += xr[j] * imdct_l[j][i];
 		}
 		rawout[i] = sum * imdct_window[block_type][i];
 	}
 }
 
-static void l3_hybrid(const struct ch_info* const cur_ch, const int ch, float xr[SBLIMIT * SSLIMIT])
+static void l3_hybrid(const struct ch_info* cur_ch, const int ch, float xr[SBLIMIT * SSLIMIT])
 {
 	float rawout[36];
-	int off;
+	unsigned off;
 
-	for (off = 0; /*off < SBLIMIT * SSLIMIT &&*/ off < cur_ch->nonzero_len; off += SSLIMIT) {
+	for (off = 0; off < cur_ch->nonzero_len; off += SSLIMIT) {
 		unsigned char block_type = (cur_ch->win_switch_flag == 1 && cur_ch->mixed_block_flag == 1 && off < 2 * SSLIMIT) ? 0 : cur_ch->block_type;
 
 		/* IMDCT and WINDOWING */
@@ -792,8 +779,13 @@ void l3_init(const struct mpeg_header* const header)
 	cur_sfb_table.width_short = __sfb_width_short[header->sampling_frequency];
 
 	int i, j;
-	for (i = 0; i < 8207; ++i)
-		gain_powreq[i] = (float)pow((double)i, 4.0 / 3.0);
+	for (i = 0; i < 378; ++i) {
+		gain_powis[i] = (float)pow((double)i, 4.0 / 3.0);
+		gain_pow2[i] = (float)pow(2.0, -0.25 * (i - 45.0));
+	}
+
+	for (; i < 8207; ++i)
+		gain_powis[i] = (float)pow((double)i, 4.0 / 3.0);
 
 	//for (i = -256; i < 118 + 4; ++i)
 	//	gain_pow2_is[i + 256] = (float)pow(2.0, (i + 210.0) * -1.0 / 4.0);
@@ -805,31 +797,34 @@ void l3_init(const struct mpeg_header* const header)
 	}
 
 	{
-		for (i = 0; i < 18; ++i) {
+		for (i = 0; i < 6; ++i) {
 			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
 			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-		}
-		for (i = 18; i < 24; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[1][i] = 1.0f;
-		}
-		for (i = 24; i < 30; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[1][i] = (float)sin(M_PI / 12.0 * (i + 0.5 - 18.0));
-		}
-		for (i = 30; i < 36; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-		}
-		for (i = 0; i < 12; ++i) {
 			imdct_window[2][i] = (float)sin(M_PI / 12.0 * (i + 0.5));
+			imdct_window[3][i] = 0.0f;
 		}
-		for (i = 6; i < 12; ++i) {
+
+		for (; i < 12; ++i) {
+			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[2][i] = (float)sin(M_PI / 12.0 * (i + 0.5));
 			imdct_window[3][i] = (float)sin(M_PI / 12.0 * (i + 0.5 - 6.0));
 		}
-		for (i = 12; i < 18; ++i) {
-			imdct_window[3][i] = 1.0;
+
+		for (; i < 18; ++i) {
+			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[3][i] = 1.0f;
 		}
-		for (i = 18; i < 36; ++i) {
+
+		for (; i < 30; ++i) {
+			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[3][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+		}
+
+		for (; i < 36; ++i) {
+			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
 			imdct_window[3][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
 		}
 	}
@@ -860,7 +855,7 @@ void l3_init(const struct mpeg_header* const header)
 }
 
 static short is[SBLIMIT * SSLIMIT];
-static float xr[2][2][SBLIMIT * SSLIMIT];
+static float xr[2][SBLIMIT * SSLIMIT];
 int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 {
 	const struct mpeg_frame* const cur_frame = &handle->cur_frame;
@@ -868,6 +863,10 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 	struct bs* const sideinfo_stream = handle->sideinfo_stream;
 	struct bs* const maindata_stream = handle->maindata_stream;
 	struct l3_sideinfo sideinfo;
+	/*
+	* short: 36, mixed: 8 + 27, long: 21
+	*/
+	unsigned scalefac[2][39];	// scalefac[ch][sfb], scalefactor band(缩放因子带)
 	int gr, ch;
 	char log_msg_buf[64];
 
@@ -887,11 +886,16 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 			sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);
 			LOG_E("bs_Append(maindata_stream)", log_msg_buf);
 		}
-		return 1;
+		return -1;
 	}
 
+	maindata_stream->byte_ptr = maindata_stream->end_ptr - sideinfo.main_data_begin;
+	maindata_stream->bit_pos = 0;
+
+#if 0
 	int discard = bs_Avaliable(maindata_stream) - sideinfo.main_data_begin;
 	bs_skipBytes(maindata_stream, discard);
+#endif
 
 	if (bs_Append(maindata_stream, sideinfo_stream->byte_ptr, 0, cur_frame->maindata_size) != cur_frame->maindata_size) {
 		sprintf(log_msg_buf, "frame#%u maindata_stream overflow!", frame_count);
@@ -900,33 +904,52 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 	}
 
 	for (gr = 0; gr < 2; ++gr) {
-		l3_decode_scalefactors(maindata_stream, &sideinfo.gr[gr].ch[0], &sideinfo, gr, 0);
-		l3_huffman_decode(maindata_stream, &sideinfo.gr[gr].ch[0], is);
-		l3_requantize(&sideinfo.gr[gr].ch[0], is, xr[0][gr]);
+		struct gr_info* cur_gr = &sideinfo.gr[gr];
+		l3_decode_scalefactors(maindata_stream, &cur_gr->ch[0], &sideinfo, gr, 0, scalefac);
+		l3_huffman_decode(maindata_stream, &cur_gr->ch[0], is);
+		l3_requantize(&cur_gr->ch[0], cur_frame, is, scalefac[0], xr[0]);
 
 		if (cur_frame->nch == 2) {
-			l3_decode_scalefactors(maindata_stream, &sideinfo.gr[gr].ch[1], &sideinfo, gr, 1);
-			l3_huffman_decode(maindata_stream, &sideinfo.gr[gr].ch[1], is);
-			l3_requantize(&sideinfo.gr[gr].ch[1], is, xr[1][gr]);
+			l3_decode_scalefactors(maindata_stream, &cur_gr->ch[1], &sideinfo, gr, 1, scalefac);
+			l3_huffman_decode(maindata_stream, &cur_gr->ch[1], is);
+			l3_requantize(&cur_gr->ch[1], cur_frame, is, scalefac[1], xr[1]);
 
-			l3_do_stereo(cur_frame, &sideinfo.gr[gr], gr, xr);
-		}
-	}
+			if (cur_frame->is_MS || cur_frame->is_Intensity) {
+				if (cur_gr->ch[0].nonzero_len > cur_gr->ch[1].nonzero_len)
+					cur_gr->ch[1].nonzero_len = cur_gr->ch[0].nonzero_len;
+				else cur_gr->ch[0].nonzero_len = cur_gr->ch[1].nonzero_len;
 
-	for (ch = 0; ch < cur_frame->nch; ++ch) {
-		for (gr = 0; gr < 2; ++gr) {
-			l3_antialias(&sideinfo.gr[gr].ch[ch], xr[ch][gr]);
-			l3_hybrid(&sideinfo.gr[gr].ch[ch], ch, xr[ch][gr]);
-
-			/* frequency inversion */
-			for (int sb = 1; sb < 32; sb += 2) {
-				for (int i = 1; i < 18; i += 2) {
-					xr[ch][gr][sb * 18 + i] = -xr[ch][gr][sb * 18 + i];
+				if (cur_frame->is_MS)
+					l3_do_ms_stereo(cur_gr->ch[0].nonzero_len, xr);
+				if (cur_frame->is_Intensity) {
+					LOG_W("chech_stereo", "intesity_stereo not supported!");
+					// l3_do_intesity_stereo(cur_gr, scalefac[0], xr);
 				}
 			}
+		}
 
-			/* polyphase subband synthesis */
-			synthesis_subband_filter(xr[ch][gr], &handle->pcm, ch, cur_frame->nch);
+		{
+			int sb, ss, i;
+			float s[32];
+			for (ch = 0; ch < cur_frame->nch; ++ch) {
+				l3_antialias(&sideinfo.gr[gr].ch[ch], xr[ch]);
+				l3_hybrid(&sideinfo.gr[gr].ch[ch], ch, xr[ch]);
+
+				/* frequency inversion */
+				for (sb = 1; sb < 32; sb += 2) {
+					for (i = 1; i < 18; i += 2) {
+						xr[ch][sb * 18 + i] = -xr[ch][sb * 18 + i];
+					}
+				}
+
+				for (ss = 0; ss < SSLIMIT; ++ss) {
+					for (i = 0; i < 32; i++) {
+						s[i] = xr[ch][i * 18 + ss];
+					}
+					/* polyphase subband synthesis */
+					synthesis_subband_filter(s, ch, cur_frame->nch, handle->pcm.pcm_buf, handle->pcm.write_off + ch);
+				}
+			}
 		}
 	}
 

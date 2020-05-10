@@ -99,7 +99,7 @@ unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 			memcpy(bstream->bit_buf, bstream->byte_ptr, bs_Avaliable(bstream));
 			bstream->end_ptr = bstream->bit_buf + bs_Avaliable(bstream);
 			bstream->byte_ptr = bstream->bit_buf;
-			bstream->bit_pos = 0;
+			// bstream->bit_pos = 0;
 
 			if (len > bs_freeSpace(bstream))
 				len = bs_freeSpace(bstream);

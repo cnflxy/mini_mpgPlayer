@@ -3,7 +3,7 @@
 
 struct huff_tab {
 	const unsigned short* table;
-	const unsigned short linbits;
+	const unsigned char linbits;
 	const unsigned short treelen;
 };
 

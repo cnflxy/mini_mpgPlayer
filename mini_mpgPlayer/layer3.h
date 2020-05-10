@@ -32,14 +32,8 @@ struct ch_info {
 	unsigned char scalefac_scale;		// 1 bit
 	unsigned char count1table_select;	// 1 bit
 
-	/*
-	* short: 36, mixed: 8 + 27, long: 21
-	*/
-	unsigned char scalefac_l[21];		// scalefac_l[sfb], scalefactor band(缩放因子带)
-	unsigned char scalefac_s[12 * 3];	// scalefac_s[sfb], scalefactor band(缩放因子带)
-
 	unsigned short part2_len;	// scalefactor len
-	int nonzero_len;	// Huffman区（大值区和小值区）
+	unsigned nonzero_len;	// Huffman区（大值区和小值区）
 };
 
 struct gr_info {

@@ -20,7 +20,7 @@ int main(int argc, char** argv)
 	unsigned frame_count = decoder_Run(decoder);
 	decoder_Release(&decoder);
 	if (frame_count) {
-		printf("\ntime: %.3lfsecs", ((double)clock() - s) / CLOCKS_PER_SEC);
+		printf("\ntime: %.2lfsecs", ((double)clock() - s) / CLOCKS_PER_SEC);
 		printf("\nframe count: %u\n", frame_count);
 	}
 
