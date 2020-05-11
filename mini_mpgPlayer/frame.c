@@ -150,7 +150,7 @@ int decode_next_frame(struct mpeg_frame* const frame, struct bs* const bstream)
 	frame->frame_size = !frame->freeformat ? get_frame_size(frame) : 0;
 	frame->sideinfo_size = header->layer == LAYER_3 ? _l3_sideinfo_size[frame->lsf][frame->nch - 1] : 0;
 
-	frame->pcm_size = (frame->lsf ? 2304U : 4608U) >> (frame->nch == 1);
+	frame->pcm_size = (frame->lsf ? 2304U : 4608U)/* >> (frame->nch == 1)*/;
 
 	frame->header_size = 4;
 	if (!header->protection_bit)

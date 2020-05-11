@@ -10,7 +10,7 @@ struct pcm_stream {
 	unsigned pcm_buf_size;	// audio_buf_size * 4，当内容达到这个值便进行复位
 };
 
-int audio_open(unsigned short nch, unsigned rate);
+int audio_open(unsigned rate);
 void audio_close(void);
 int play_samples(const void* data, unsigned len);
 

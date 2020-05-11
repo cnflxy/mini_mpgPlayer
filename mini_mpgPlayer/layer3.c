@@ -11,7 +11,6 @@
 #define SSLIMIT	18
 
 #define M_PI       3.14159265358979323846
-#define M_SQRT2	1.41421356237309504880
 
 // scalefactor bit lengths
 static const unsigned char sflen_table[2][16] = {
@@ -286,7 +285,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 	unsigned region[3], is_pos = 0;
 	int part3_len = cur_ch->part2_3_len - cur_ch->part2_len;
 	const struct huff_tab* htab;
-	unsigned short point, bitleft, treelen, error = 0;
+	unsigned short point, bitleft, treelen, error = 0, bv = cur_ch->big_values * 2;;
 	short x, y, v, w;
 	char log_msg_buf[64];
 
@@ -306,11 +305,10 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 				region[1] = cur_sfb_table.index_long[r2];
 			}
 
-			unsigned bv = cur_ch->big_values * 2;
-			if (bv > 574) {
-				LOG_W("check_huff_stat", "bv > 574!");
-				bv = 574;
-			}
+			//if (bv > 574) {
+			//	LOG_W("check_huff_stat", "bv > 574!");
+			//	bv = 574;
+			//}
 			if (bv <= region[0])
 				region[0] = region[1] = region[2] = bv;
 			else if (bv <= region[1])
@@ -323,7 +321,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 		for (int r = 0; r < 3 && !error; ++r) {
 			htab = ht + cur_ch->table_select[r];
 			treelen = htab->treelen;
-			while (is_pos < region[r] && part3_len >= 0) {
+			while (is_pos < region[r]/* && part3_len >= 0*/) {
 				{
 					bitleft = 32;
 					error = 1;
@@ -346,7 +344,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 							point += htab->table[point] >> 8;
 						}
 						--part3_len;
-					} while (--bitleft && point < treelen && part3_len >= 0);
+					} while (--bitleft && point < treelen/* && part3_len >= 0*/);
 					if (error) {
 						sprintf(log_msg_buf, "bigvalues: bitleft=%hu point=%hu treelen=%hu part3_len=%d", bitleft, point, treelen, part3_len);
 						LOG_E("check_huff_stat", log_msg_buf);
@@ -385,6 +383,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 		// ½âÂë count1 Çø
 		htab = htc + cur_ch->count1table_select;
 		treelen = htab->treelen;
+		is_pos = bv;
 		while (is_pos < 572 && part3_len > 0 && !error) {
 			bitleft = 32;
 			error = 1;
@@ -407,7 +406,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					point += htab->table[point] >> 8;
 				}
 				--part3_len;
-			} while (--bitleft && point < treelen && part3_len >= 0);
+			} while (--bitleft && point < treelen/* && part3_len >= 0*/);
 			if (error) {
 				if (part3_len < -1) {
 					sprintf(log_msg_buf, "count1: bitleft=%hu point=%hu treelen=%hu part3_len=%d", bitleft, point, treelen, part3_len);
@@ -426,7 +425,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					x = -x;
 				if (--part3_len < 0) {
 					LOG_E("check_huff_stat", "count1: x");
-					break;
+					//break;
 				}
 			}
 
@@ -435,7 +434,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					v = -v;
 				if (--part3_len < 0) {
 					LOG_E("check_huff_stat", "count1: v");
-					break;
+					//break;
 				}
 			}
 
@@ -444,7 +443,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					w = -w;
 				if (--part3_len < 0) {
 					LOG_E("check_huff_stat", "count1: w");
-					break;
+					//break;
 				}
 			}
 
@@ -453,17 +452,25 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 					y = -y;
 				if (--part3_len < 0) {
 					LOG_E("check_huff_stat", "count1: y");
-					break;
+					//break;
 				}
 			}
 
 			is[is_pos++] = x;
+			if (is_pos >= 576)
+				break;
 			is[is_pos++] = v;
+			if (is_pos >= 576)
+				break;
 			is[is_pos++] = w;
+			if (is_pos >= 576)
+				break;
 			is[is_pos++] = y;
 		}
 
 		if (part3_len < 0) {
+			if (part3_len + 1 < 0)
+				is_pos -= 4;
 			LOG_E("check_huff_stat", "part3_len < 0");
 		} else if (part3_len > 0) {
 			LOG_E("check_huff_stat", "part3_len > 0");
@@ -707,7 +714,7 @@ static void l3_antialias(const struct ch_info* cur_ch, float xr[SBLIMIT * SSLIMI
 			return;
 		sblimit = SSLIMIT;
 	} else
-		sblimit = cur_ch->nonzero_len - SSLIMIT;
+		sblimit = ((cur_ch->nonzero_len + SBLIMIT - 1) / SBLIMIT) * SSLIMIT;
 
 	for (sb = 0; sb < sblimit; sb += SSLIMIT) {
 		for (i = 0; i < 8; ++i) {
@@ -780,12 +787,12 @@ void l3_init(const struct mpeg_header* const header)
 
 	int i, j;
 	for (i = 0; i < 378; ++i) {
-		gain_powis[i] = (float)pow((double)i, 4.0 / 3.0);
-		gain_pow2[i] = (float)pow(2.0, -0.25 * (i - 45.0));
+		gain_pow2[i] = (float)pow(2.0, -0.25 * ((double)i - 45.0));
 	}
 
-	for (; i < 8207; ++i)
+	for (i = 0; i < 8207; ++i) {
 		gain_powis[i] = (float)pow((double)i, 4.0 / 3.0);
+	}
 
 	//for (i = -256; i < 118 + 4; ++i)
 	//	gain_pow2_is[i + 256] = (float)pow(2.0, (i + 210.0) * -1.0 / 4.0);
@@ -798,46 +805,52 @@ void l3_init(const struct mpeg_header* const header)
 
 	{
 		for (i = 0; i < 6; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[2][i] = (float)sin(M_PI / 12.0 * (i + 0.5));
-			imdct_window[3][i] = 0.0f;
+			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			imdct_window[1][i] = imdct_window[0][i];
+			imdct_window[2][i] = (float)sin(M_PI * (2 * i + 1) / 24);
+			// imdct_window[3][i] = 0.0f;
 		}
 
 		for (; i < 12; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[2][i] = (float)sin(M_PI / 12.0 * (i + 0.5));
-			imdct_window[3][i] = (float)sin(M_PI / 12.0 * (i + 0.5 - 6.0));
+			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			imdct_window[1][i] = imdct_window[0][i];
+			imdct_window[2][i] = (float)sin(M_PI * (2 * i + 1) / 24);
+			imdct_window[3][i] = (float)sin(M_PI * (2 * i - 15) / 24);
 		}
 
 		for (; i < 18; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			imdct_window[1][i] = imdct_window[0][i];
 			imdct_window[3][i] = 1.0f;
 		}
 
+		for (; i < 24; ++i) {
+			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			imdct_window[1][i] = 1.0f;
+			imdct_window[3][i] = imdct_window[0][i];
+		}
+
 		for (; i < 30; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[1][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[3][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			imdct_window[1][i] = (float)sin(M_PI * (2 * i - 35) / 24);
+			imdct_window[3][i] = imdct_window[0][i];
 		}
 
 		for (; i < 36; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
-			imdct_window[3][i] = (float)sin(M_PI / 36.0 * (i + 0.5));
+			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			imdct_window[3][i] = imdct_window[0][i];
 		}
 	}
 
 	for (i = 0; i < 6; ++i) {
 		for (j = 0; j < 12; ++j) {
-			imdct_s[i][j] = (float)cos(M_PI / 24.0 * (2.0 * j + 7.0) * (2.0 * i + 1.0));
+			imdct_s[i][j] = (float)cos(M_PI * ((2 * j + 7) * (2 * i + 1)) / 24);
 		}
 	}
 
 	for (i = 0; i < 18; ++i) {
 		for (j = 0; j < 36; ++j) {
-			imdct_l[i][j] = (float)cos(M_PI / 72.0 * (2.0 * j + 19.0) * (2.0 * i + 1.0));
+			imdct_l[i][j] = (float)cos(M_PI * ((2 * j + 19) * (2 * i + 1)) / 72);
 		}
 	}
 
@@ -848,7 +861,7 @@ void l3_init(const struct mpeg_header* const header)
 	//	is_table[i] = (float)(is_ratio / (1.0 + is_ratio));
 	//}
 	for (i = 0; i < 6; ++i) {
-		is_ratio[i] = (float)tan(i * M_PI / 12.0);
+		is_ratio[i] = (float)tan(i * M_PI / 12);
 	}
 
 	init_synthesis_tabs();
@@ -919,8 +932,8 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 					cur_gr->ch[1].nonzero_len = cur_gr->ch[0].nonzero_len;
 				else cur_gr->ch[0].nonzero_len = cur_gr->ch[1].nonzero_len;
 
-				if (cur_frame->is_MS)
-					l3_do_ms_stereo(cur_gr->ch[0].nonzero_len, xr);
+				if (cur_frame->is_MS);
+				l3_do_ms_stereo(cur_gr->ch[0].nonzero_len, xr);
 				if (cur_frame->is_Intensity) {
 					LOG_W("chech_stereo", "intesity_stereo not supported!");
 					// l3_do_intesity_stereo(cur_gr, scalefac[0], xr);

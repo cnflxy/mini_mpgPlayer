@@ -16,11 +16,14 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	clock_t s = clock();
+	printf("Input: \"%s\"\n\n", argv[1]);
+
+	clock_t s = clock(), e;
 	unsigned frame_count = decoder_Run(decoder);
 	decoder_Release(&decoder);
+	e = clock();
 	if (frame_count) {
-		printf("\ntime: %.2lfsecs", ((double)clock() - s) / CLOCKS_PER_SEC);
+		printf("\ntime: %.2lfsecs", (double)(e - s) / CLOCKS_PER_SEC);
 		printf("\nframe count: %u\n", frame_count);
 	}
 

@@ -167,7 +167,7 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 {
 	int i, j;
 	float sum;
-	short pcmi;
+	int pcmi;
 
 	for (i = 1023; i > 63; --i)
 		_V[ch][i] = _V[ch][i - 64];
@@ -203,12 +203,12 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 		}
 
 		// Output reconstructed PCM Sample
-		sum *= 32767.0f;
-		if (sum > 32767.0f) {
+		pcmi = (int)roundf(sum * 32767.0f);
+		if (pcmi > 32767) {
 			pcmi = 32767;
-		} else if (sum < -32768.0f) {
+		} else if (pcmi < -32768) {
 			pcmi = -32768;
-		} else pcmi = (short)sum;
+		}
 
 		((short*)(pcm_buf + *off))[0] = pcmi;
 		if (nch == 1)
