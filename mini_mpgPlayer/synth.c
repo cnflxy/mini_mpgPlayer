@@ -149,12 +149,13 @@ static float _V[2][1024];
 
 void init_synthesis_tabs(void)
 {
-	int i, j;
+	int i, j, k;
 
 	for (i = 0; i < 64; ++i) {
 		for (j = 0; j < 32; ++j) {
 			// _N[i][k] = cos(i * (2.0 * k + 1) * PI / 64);
-			_N[i][j] = (float)cos((16.0 + i) * (2.0 * j + 1.0) * M_PI / 64.0);
+			k = (16 + i) * (2 * j + 1);
+			_N[i][j] = (float)cos(k * M_PI / 64.0);
 		}
 	}
 
@@ -167,7 +168,7 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 {
 	int i, j;
 	float sum;
-	int pcmi;
+	short pcmi;
 
 	for (i = 1023; i > 63; --i)
 		_V[ch][i] = _V[ch][i - 64];
@@ -203,12 +204,12 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 		}
 
 		// Output reconstructed PCM Sample
-		pcmi = (int)roundf(sum * 32767.0f);
-		if (pcmi > 32767) {
-			pcmi = 32767;
-		} else if (pcmi < -32768) {
-			pcmi = -32768;
-		}
+		sum *= 32767.0f;
+		if (sum > 32767.0f) {
+			pcmi = 0x7fff;
+		} else if (sum < -32768.0f) {
+			pcmi = 0x80ff;
+		} else pcmi = (short)(int)sum;
 
 		((short*)(pcm_buf + *off))[0] = pcmi;
 		if (nch == 1)

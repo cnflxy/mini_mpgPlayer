@@ -128,6 +128,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 
 	if (get_vbr_tag(handle->file_stream, cur_frame) == 0) {
 		bs_skipBytes(handle->file_stream, cur_frame->sideinfo_size + cur_frame->maindata_size);
+		print_header_info(cur_frame);
 		if (decode_next_frame(cur_frame, handle->file_stream) == -1) {
 			LOG_E("decode_next_frame", "can't find the first frame!");
 			return 0;
@@ -154,7 +155,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 			}
 			if (handle->output_flags & OUTPUT_FILE && fwrite(pcm_out->pcm_buf, 1, pcm_out->pcm_buf_size, handle->wav_ptr) != pcm_out->pcm_buf_size) {
 				sprintf(log_msg_buf, "frame#%u write failed!", frame_count);
-				LOG_E("fwrite", log_msg_buf);
+				LOG_E("write_samples", log_msg_buf);
 			}
 			pcm_out->write_off[0] = 0;
 			pcm_out->write_off[1] = 2;

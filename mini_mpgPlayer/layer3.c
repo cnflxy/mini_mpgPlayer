@@ -785,9 +785,10 @@ void l3_init(const struct mpeg_header* const header)
 	cur_sfb_table.width_long = __sfb_width_long[header->sampling_frequency];
 	cur_sfb_table.width_short = __sfb_width_short[header->sampling_frequency];
 
-	int i, j;
+	int i, j, k, m;
 	for (i = 0; i < 378; ++i) {
-		gain_pow2[i] = (float)pow(2.0, -0.25 * ((double)i - 45.0));
+		k = 45 - i;
+		gain_pow2[i] = (float)pow(2.0, k / 4.0);
 	}
 
 	for (i = 0; i < 8207; ++i) {
@@ -805,53 +806,69 @@ void l3_init(const struct mpeg_header* const header)
 
 	{
 		for (i = 0; i < 6; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			k = 2 * i + 1;
+			imdct_window[0][i] = (float)sin(M_PI * k / 72);
 			imdct_window[1][i] = imdct_window[0][i];
-			imdct_window[2][i] = (float)sin(M_PI * (2 * i + 1) / 24);
+			imdct_window[2][i] = (float)sin(M_PI * k / 24);
 			// imdct_window[3][i] = 0.0f;
 		}
 
 		for (; i < 12; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			k = 2 * i + 1;
+			imdct_window[0][i] = (float)sin(M_PI * k / 72);
 			imdct_window[1][i] = imdct_window[0][i];
-			imdct_window[2][i] = (float)sin(M_PI * (2 * i + 1) / 24);
-			imdct_window[3][i] = (float)sin(M_PI * (2 * i - 15) / 24);
+			imdct_window[2][i] = (float)sin(M_PI * k / 24);
+			k -= 16;
+			imdct_window[3][i] = (float)sin(M_PI * k / 24);
 		}
 
 		for (; i < 18; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			k = 2 * i + 1;
+			imdct_window[0][i] = (float)sin(M_PI * k / 72);
 			imdct_window[1][i] = imdct_window[0][i];
 			imdct_window[3][i] = 1.0f;
 		}
 
 		for (; i < 24; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			k = 2 * i + 1;
+			imdct_window[0][i] = (float)sin(M_PI * k / 72);
 			imdct_window[1][i] = 1.0f;
 			imdct_window[3][i] = imdct_window[0][i];
 		}
 
 		for (; i < 30; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
-			imdct_window[1][i] = (float)sin(M_PI * (2 * i - 35) / 24);
+			k = 2 * i + 1;
+			imdct_window[0][i] = (float)sin(M_PI * k / 72);
+			k -= 36;
+			imdct_window[1][i] = (float)sin(M_PI * k / 24);
 			imdct_window[3][i] = imdct_window[0][i];
 		}
 
 		for (; i < 36; ++i) {
-			imdct_window[0][i] = (float)sin(M_PI * (2 * i + 1) / 72);
+			k = 2 * i + 1;
+			imdct_window[0][i] = (float)sin(M_PI * k / 72);
 			imdct_window[3][i] = imdct_window[0][i];
 		}
 	}
 
+	k = 1;
 	for (i = 0; i < 6; ++i) {
+		m = 7;
 		for (j = 0; j < 12; ++j) {
-			imdct_s[i][j] = (float)cos(M_PI * ((2 * j + 7) * (2 * i + 1)) / 24);
+			imdct_s[i][j] = (float)cos(M_PI * k * m / 24);
+			m += 2;
 		}
+		k += 2;
 	}
 
+	k = 1;
 	for (i = 0; i < 18; ++i) {
+		m = 19;
 		for (j = 0; j < 36; ++j) {
-			imdct_l[i][j] = (float)cos(M_PI * ((2 * j + 19) * (2 * i + 1)) / 72);
+			imdct_l[i][j] = (float)cos(M_PI * m * k / 72);
+			m += 2;
 		}
+		k += 2;
 	}
 
 	// static float is_coef[] = { 0.0, 0.211324865, 0.366025404, 0.5, 0.633974596, 0.788675135, 1.0 };
