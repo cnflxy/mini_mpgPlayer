@@ -384,7 +384,7 @@ static void l3_huffman_decode(struct bs* const maindata_stream, struct ch_info* 
 		htab = htc + cur_ch->count1table_select;
 		treelen = htab->treelen;
 		is_pos = bv;
-		while (is_pos < 572 && part3_len > 0 && !error) {
+		while (is_pos <= 572 && part3_len > 0 && !error) {
 			bitleft = 32;
 			error = 1;
 			point = 0;
@@ -538,8 +538,8 @@ static void l3_requantize(const struct ch_info* cur_ch, const struct mpeg_frame*
 		pow2i += 2;
 
 	if (cur_ch->nonzero_len) {
-		if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
-			if (cur_ch->mixed_block_flag == 1) { /* MIXED BLOCk*/
+		if (cur_ch->win_switch_flag && cur_ch->block_type == 2) {
+			if (cur_ch->mixed_block_flag) { /* MIXED BLOCk*/
 				for (; sfb < 8; ++sfb, ++scf, ++pre) {
 					width = cur_sfb_table.width_long[sfb];
 					for (bi = 0; bi < width; ++bi, ++is_pos) {
@@ -612,9 +612,9 @@ static void l3_do_intesity_stereo(struct gr_info* cur_gr, const unsigned scf[39]
 		return;
 	}
 
-	if (cur_gr->ch[0].win_switch_flag == 1 && cur_gr->ch[0].block_type == 2) {
+	if (cur_gr->ch[0].win_switch_flag && cur_gr->ch[0].block_type == 2) {
 		// MPEG-1, short block/mixed block
-		if (cur_gr->ch[0].mixed_block_flag == 1) {
+		if (cur_gr->ch[0].mixed_block_flag) {
 			for (sfb = 0; sfb < 8; ++sfb) {
 				if (cur_sfb_table.index_long[sfb] < cur_gr->ch[1].nonzero_len)
 					continue;
@@ -709,8 +709,8 @@ static void l3_antialias(const struct ch_info* cur_ch, float xr[SBLIMIT * SSLIMI
 {
 	int sblimit, sb, i;
 
-	if (cur_ch->win_switch_flag == 1 && cur_ch->block_type == 2) {
-		if (cur_ch->mixed_block_flag == 0)
+	if (cur_ch->win_switch_flag && cur_ch->block_type == 2) {
+		if (!cur_ch->mixed_block_flag)
 			return;
 		sblimit = SSLIMIT;
 	} else
@@ -756,7 +756,7 @@ static void l3_hybrid(const struct ch_info* cur_ch, const int ch, float xr[SBLIM
 	unsigned off;
 
 	for (off = 0; off < cur_ch->nonzero_len; off += SSLIMIT) {
-		unsigned char block_type = (cur_ch->win_switch_flag == 1 && cur_ch->mixed_block_flag == 1 && off < 2 * SSLIMIT) ? 0 : cur_ch->block_type;
+		unsigned char block_type = (cur_ch->win_switch_flag && cur_ch->mixed_block_flag && off < 2 * SSLIMIT) ? 0 : cur_ch->block_type;
 
 		/* IMDCT and WINDOWING */
 		if (block_type == 2)
@@ -966,9 +966,9 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 				l3_hybrid(&sideinfo.gr[gr].ch[ch], ch, xr[ch]);
 
 				/* frequency inversion */
-				for (sb = 1; sb < 32; sb += 2) {
+				for (sb = 1 * 18; sb < 32 * 18; sb += 2 * 18) {
 					for (i = 1; i < 18; i += 2) {
-						xr[ch][sb * 18 + i] = -xr[ch][sb * 18 + i];
+						xr[ch][sb + i] = -xr[ch][sb + i];
 					}
 				}
 

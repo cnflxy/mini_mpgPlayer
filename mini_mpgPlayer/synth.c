@@ -1,5 +1,6 @@
 #include "synth.h"
 #include <math.h>
+#include <immintrin.h>
 
 #define M_PI       3.14159265358979323846
 
@@ -153,7 +154,6 @@ void init_synthesis_tabs(void)
 
 	for (i = 0; i < 64; ++i) {
 		for (j = 0; j < 32; ++j) {
-			// _N[i][k] = cos(i * (2.0 * k + 1) * PI / 64);
 			k = (16 + i) * (2 * j + 1);
 			_N[i][j] = (float)cos(k * M_PI / 64.0);
 		}
@@ -166,20 +166,31 @@ void init_synthesis_tabs(void)
 
 void synthesis_subband_filter(const float s[32], const int ch, const int nch, unsigned char* pcm_buf, unsigned* off)
 {
-	int i, j;
-	float sum;
-	short pcmi;
+	int i, j, k;
+	__m128 f4_sum, f4_32768 = _mm_set1_ps(32768.0f);
+	float f_tmp[4];
 
-	for (i = 1023; i > 63; --i)
-		_V[ch][i] = _V[ch][i - 64];
+	float* p = (float*)(_V[ch] + 1023);
+	__asm {
+		mov edi, dword ptr[p]
+		mov esi, edi
+		sub esi, 64*4
+		mov ecx, 960
+		std
+		rep movsd
+		cld
+	}
 
 	// Matrixing (DCT(32 -> 64))
 	for (i = 0; i < 64; ++i) {
-		sum = 0.0f;
-		for (j = 0; j < 32; ++j) {
-			sum += _N[i][j] * s[j];
+		f4_sum = _mm_setzero_ps();
+		for (j = 0; j < 32; j += 4) {
+			__m128 f4_N = _mm_loadu_ps(&_N[i][j]);
+			__m128 f4_S = _mm_loadu_ps(&s[j]);
+			f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_N, f4_S));
 		}
-		_V[ch][i] = sum;
+		_mm_storeu_ps(f_tmp, f4_sum);
+		_V[ch][i] = f_tmp[0] + f_tmp[1] + f_tmp[2] + f_tmp[3];
 	}
 
 	/*
@@ -187,9 +198,11 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 	* Window by 512 coefficients
 	*/
 	for (i = 0; i < 512; i += 64) {
-		for (j = 0; j < 32; ++j) {
-			_U[i + j] = _V[ch][i * 2 + j] * _D[i + j];
-			_U[i + j + 32] = _V[ch][i * 2 + j + 96] * _D[i + j + 32];
+		for (j = 0; j < 32; j += 4) {
+			__m128 f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + j]), _mm_loadu_ps(&_D[i + j]));
+			_mm_storeu_ps(&_U[i + j], f4_U);
+			f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + j]), _mm_loadu_ps(&_D[i + 32 + j]));
+			_mm_storeu_ps(&_U[i + 32 + j], f4_U);
 		}
 	}
 
@@ -197,24 +210,30 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 	* Calculate 32 Samples
 	* Output 32 reconstructed PCM Samples
 	*/
-	for (i = 0; i < 32; ++i) {
-		sum = 0.0f;
+	for (i = 0; i < 32; i += 4) {
+		f4_sum = _mm_setzero_ps();
 		for (j = 0; j < 512; j += 32) {
-			sum += _U[i + j];
+			f4_sum = _mm_add_ps(f4_sum, _mm_loadu_ps(&_U[i + j]));
 		}
 
 		// Output reconstructed PCM Sample
-		sum *= 32767.0f;
-		if (sum > 32767.0f) {
-			pcmi = 0x7fff;
-		} else if (sum < -32768.0f) {
-			pcmi = 0x80ff;
-		} else pcmi = (short)(int)sum;
+		f4_sum = _mm_mul_ps(f4_sum, f4_32768);
+		_mm_storeu_ps(f_tmp, f4_sum);
+		for (k = 0; k < 4; ++k) {
+			if (f_tmp[k] >= 32766.5f) {
+				((short*)(pcm_buf + *off))[0] = 32767;
+			} else if (f_tmp[k] <= -32767.5f) {
+				((short*)(pcm_buf + *off))[0] = -32768;
+			} else {
+				((short*)(pcm_buf + *off))[0] = (short)(int)(f_tmp[k] + 0.5f);
+				if (((short*)(pcm_buf + *off))[0] < 0)
+					((short*)(pcm_buf + *off))[0] -= 1;
+			}
 
-		((short*)(pcm_buf + *off))[0] = pcmi;
-		if (nch == 1)
-			((short*)(pcm_buf + *off))[1] = pcmi;
+			if (nch == 1)
+				((short*)(pcm_buf + *off))[1] = ((short*)(pcm_buf + *off))[0];
 
-		*off += 4;
+			*off += 4;
+		}
 	}
 }
