@@ -6,8 +6,7 @@
 
 static CRITICAL_SECTION g_cs;
 static HWAVEOUT g_WaveDev;
-static int g_nBlocks;
-static const int g_maxBlocks = 8;
+static unsigned g_nBlocks;
 
 static void CALLBACK waveout_callback(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
@@ -47,7 +46,6 @@ int audio_open(unsigned rate)
 
 	waveOutReset(g_WaveDev);
 	InitializeCriticalSection(&g_cs);
-	g_nBlocks = 0;
 
 	return 0;
 }
@@ -55,21 +53,20 @@ int audio_open(unsigned rate)
 void audio_close(void)
 {
 	if (g_WaveDev) {
-		while (g_nBlocks > 0)
-			;
+		while (g_nBlocks)
+			Sleep(76);
 
 		waveOutReset(g_WaveDev);
 		waveOutClose(g_WaveDev);
 		g_WaveDev = NULL;
 		DeleteCriticalSection(&g_cs);
-		g_nBlocks = 0;
 	}
 }
 
 int play_samples(const void* data, unsigned len)
 {
-	while (g_nBlocks > g_maxBlocks)
-		;
+	while (g_nBlocks >> 4)
+		Sleep(76);
 
 	HGDIOBJ hg_Data = GlobalAlloc(GMEM_MOVEABLE, len);
 	if (!hg_Data) {

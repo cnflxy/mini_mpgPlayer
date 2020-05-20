@@ -42,7 +42,7 @@ void decoder_Release(struct decoder_handle** const handle)
 	if (handle && *handle) {
 		if ((*handle)->output_flags & OUTPUT_AUDIO)
 			audio_close();
-		if (/*(*handle)->output_flags & OUTPUT_FILE && */(*handle)->wav_ptr)
+		if ((*handle)->output_flags & OUTPUT_FILE && (*handle)->wav_ptr)
 			fclose((*handle)->wav_ptr);
 		if ((*handle)->sideinfo_stream)
 			(*handle)->sideinfo_stream->bit_buf = NULL;

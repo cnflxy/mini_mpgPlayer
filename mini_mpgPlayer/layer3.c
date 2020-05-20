@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <immintrin.h>
 
 #define	SBLIMIT	32
 #define SSLIMIT	18
@@ -556,7 +557,7 @@ static void l3_requantize(const struct ch_info* cur_ch, const struct mpeg_frame*
 				sfb = 3;
 			}
 			/* pure SHORT BLOCK */
-			for (; is_pos < cur_ch->nonzero_len; ++sfb) {
+			for (; is_pos < /*cur_ch->nonzero_len*/SBLIMIT * SSLIMIT; ++sfb) {
 				width = cur_sfb_table.width_short[sfb];
 				for (window = 0; window < 3; ++window, ++scf) {
 					xri = xri_start + window;
@@ -573,7 +574,7 @@ static void l3_requantize(const struct ch_info* cur_ch, const struct mpeg_frame*
 				xri_start = xri - 2;
 			}
 		} else { /* pure LONG BLOCK */
-			for (; is_pos < cur_ch->nonzero_len; ++sfb, ++scf, ++pre) {
+			for (; is_pos < /*cur_ch->nonzero_len*/SBLIMIT * SSLIMIT; ++sfb, ++scf, ++pre) {
 				width = cur_sfb_table.width_long[sfb];
 				for (bi = 0; bi < width; ++bi, ++is_pos) {
 					if (is[is_pos] < 0) {
@@ -588,17 +589,16 @@ static void l3_requantize(const struct ch_info* cur_ch, const struct mpeg_frame*
 	}
 
 	// 不逆量化0值区,置0.
-	while (is_pos < 576)
+	while (is_pos < SBLIMIT * SSLIMIT)
 		xr[is_pos++] = 0.0f;
 }
 
 static void l3_do_ms_stereo(const unsigned max, float xr[2][SBLIMIT * SSLIMIT])
 {
-	for (unsigned i = 0; i < max; ++i) {
-		const float v0 = xr[0][i] + xr[1][i];
-		const float v1 = xr[0][i] - xr[1][i];
-		xr[0][i] = v0;
-		xr[1][i] = v1;
+	for (unsigned i = 0; i < max; i += 4) {
+		__m128 f4_0 = _mm_loadu_ps(&xr[0][i]), f4_1 = _mm_loadu_ps(&xr[1][i]);
+		_mm_storeu_ps(&xr[0][i], _mm_add_ps(f4_0, f4_1));
+		_mm_storeu_ps(&xr[1][i], _mm_sub_ps(f4_0, f4_1));
 	}
 }
 
@@ -707,55 +707,75 @@ static void l3_do_intesity_stereo(struct gr_info* cur_gr, const unsigned scf[39]
 
 static void l3_antialias(const struct ch_info* cur_ch, float xr[SBLIMIT * SSLIMIT])
 {
-	int sblimit, sb, i;
+	int sblimit, sb;
+	float tmp[4];
 
 	if (cur_ch->win_switch_flag && cur_ch->block_type == 2) {
 		if (!cur_ch->mixed_block_flag)
 			return;
 		sblimit = SSLIMIT;
 	} else
-		sblimit = ((cur_ch->nonzero_len + SBLIMIT - 1) / SBLIMIT) * SSLIMIT;
+		sblimit = /*SBLIMIT * SSLIMIT*/ cur_ch->nonzero_len - SSLIMIT;
 
 	for (sb = 0; sb < sblimit; sb += SSLIMIT) {
-		for (i = 0; i < 8; ++i) {
-			const float lb = xr[sb + 17 - i] * cs[i] - xr[sb + 18 + i] * ca[i];
-			const float ub = xr[sb + 18 + i] * cs[i] - xr[sb + 17 - i] * ca[i];
-			xr[sb + 17 - i] = lb;
-			xr[sb + 18 + i] = ub;
-		}
+		__m128 f4_xr0 = _mm_setr_ps(xr[sb + 17], xr[sb + 16], xr[sb + 15], xr[sb + 14]), f4_xr1 = _mm_loadu_ps(&xr[sb + 18]);
+		__m128 f4_cs = _mm_loadu_ps(cs), f4_ca = _mm_loadu_ps(ca);
+
+		_mm_storeu_ps(tmp, _mm_sub_ps(_mm_mul_ps(f4_xr0, f4_cs), _mm_mul_ps(f4_xr1, f4_ca)));
+		xr[sb + 17] = tmp[0];
+		xr[sb + 16] = tmp[1];
+		xr[sb + 15] = tmp[2];
+		xr[sb + 14] = tmp[3];
+		_mm_storeu_ps(&xr[sb + 18], _mm_sub_ps(_mm_mul_ps(f4_xr1, f4_cs), _mm_mul_ps(f4_xr0, f4_ca)));
+
+		f4_xr0 = _mm_setr_ps(xr[sb + 13], xr[sb + 12], xr[sb + 11], xr[sb + 10]), f4_xr1 = _mm_loadu_ps(&xr[sb + 22]);
+		f4_cs = _mm_loadu_ps(cs + 4), f4_ca = _mm_loadu_ps(ca + 4);
+		_mm_storeu_ps(tmp, _mm_sub_ps(_mm_mul_ps(f4_xr0, f4_cs), _mm_mul_ps(f4_xr1, f4_ca)));
+		xr[sb + 13] = tmp[0];
+		xr[sb + 12] = tmp[1];
+		xr[sb + 11] = tmp[2];
+		xr[sb + 10] = tmp[3];
+		_mm_storeu_ps(&xr[sb + 22], _mm_sub_ps(_mm_mul_ps(f4_xr1, f4_cs), _mm_mul_ps(f4_xr0, f4_ca)));
 	}
 }
 
 static void imdct12(const float xr[SSLIMIT], float rawout[36])
 {
+	float f_sum[4];
 	for (int i = 0; i < 3; ++i) {
+		__m128 f4_xr0 = _mm_setr_ps(xr[i], xr[i + 3], xr[i + 6], xr[i + 9]), f4_xr1 = _mm_setr_ps(xr[i + 12], xr[i + 15], 0, 0);
 		for (int j = 0; j < 12; ++j) {
-			float sum = 0.0f;
-			for (int k = 0; k < 6; ++k) {
-				sum += xr[i + 3 * k] * imdct_s[k][j];
-			}
-			rawout[6 * i + j + 6] = sum * imdct_window[2][j];
+			__m128 f4_sum = _mm_mul_ps(f4_xr0, _mm_setr_ps(imdct_s[0][j], imdct_s[1][j], imdct_s[2][j], imdct_s[3][j]));
+			f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_xr1, _mm_setr_ps(imdct_s[4][j], imdct_s[5][j], 0, 0)));
+			//f4_sum = _mm_mul_ps(f4_sum, _mm_set1_ps(imdct_window[2][j]));
+			_mm_storeu_ps(f_sum, f4_sum);
+			rawout[6 * i + j + 6] = (f_sum[0] + f_sum[1] + f_sum[2] + f_sum[3]) * imdct_window[2][j];
 		}
 	}
 }
 
 static void imdct36(const float xr[SSLIMIT], float rawout[36], unsigned char block_type)
 {
+	float f_sum[4];
 	for (int i = 0; i < 36; ++i) {
-		float sum = 0.0f;
-		for (int j = 0; j < SSLIMIT; ++j) {
-			sum += xr[j] * imdct_l[j][i];
-		}
-		rawout[i] = sum * imdct_window[block_type][i];
+		__m128 f4_xr0 = _mm_loadu_ps(xr), f4_xr1 = _mm_loadu_ps(xr + 4), f4_xr2 = _mm_loadu_ps(xr + 8), f4_xr3 = _mm_loadu_ps(xr + 12), f4_xr4 = _mm_setr_ps(xr[16], xr[17], 0, 0);
+		__m128 f4_sum = _mm_mul_ps(f4_xr0, _mm_setr_ps(imdct_l[0][i], imdct_l[1][i], imdct_l[2][i], imdct_l[3][i]));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_xr1, _mm_setr_ps(imdct_l[4][i], imdct_l[5][i], imdct_l[6][i], imdct_l[7][i])));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_xr2, _mm_setr_ps(imdct_l[8][i], imdct_l[9][i], imdct_l[10][i], imdct_l[11][i])));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_xr3, _mm_setr_ps(imdct_l[12][i], imdct_l[13][i], imdct_l[14][i], imdct_l[15][i])));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_xr4, _mm_setr_ps(imdct_l[16][i], imdct_l[17][i], 0, 0)));
+		//f4_sum = _mm_mul_ps(f4_sum, _mm_set1_ps(imdct_window[block_type][i]));
+		_mm_storeu_ps(f_sum, f4_sum);
+		rawout[i] = (f_sum[0] + f_sum[1] + f_sum[2] + f_sum[3]) * imdct_window[block_type][i];
 	}
 }
 
 static void l3_hybrid(const struct ch_info* cur_ch, const int ch, float xr[SBLIMIT * SSLIMIT])
 {
 	float rawout[36];
-	unsigned off;
+	unsigned off, i;
 
-	for (off = 0; off < cur_ch->nonzero_len; off += SSLIMIT) {
+	for (off = 0; off < /*SBLIMIT * SSLIMIT*/ cur_ch->nonzero_len; off += SSLIMIT) {
 		unsigned char block_type = (cur_ch->win_switch_flag && cur_ch->mixed_block_flag && off < 2 * SSLIMIT) ? 0 : cur_ch->block_type;
 
 		/* IMDCT and WINDOWING */
@@ -765,20 +785,20 @@ static void l3_hybrid(const struct ch_info* cur_ch, const int ch, float xr[SBLIM
 			imdct36(xr + off, rawout, block_type);
 
 		/* OVERLAPPING */
-		for (int i = 0; i < SSLIMIT; ++i) {
+		for (i = 0; i < SSLIMIT; ++i) {
 			xr[off + i] = rawout[i] + overlapp[ch][off + i];
-			overlapp[ch][off + i] = rawout[i + 18];
+			overlapp[ch][off + i] = rawout[i + SSLIMIT];
 		}
 	}
 
-	// 0值区
-	for (; off < 576; ++off) {
+	//// 0值区
+	for (; off < SBLIMIT * SSLIMIT; ++off) {
 		xr[off] = overlapp[ch][off];
 		overlapp[ch][off] = 0.0f;
 	}
 }
 
-void l3_init(const struct mpeg_header* const header)
+void l3_init(const struct mpeg_header* header)
 {
 	cur_sfb_table.index_long = __sfb_index_long[header->sampling_frequency];
 	cur_sfb_table.index_short = __sfb_index_short[header->sampling_frequency];
@@ -787,7 +807,7 @@ void l3_init(const struct mpeg_header* const header)
 
 	int i, j, k, m;
 	for (i = 0; i < 378; ++i) {
-		k = 45 - i;
+		k = 46 - i;
 		gain_pow2[i] = (float)pow(2.0, k / 4.0);
 	}
 
@@ -909,6 +929,10 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 		return 1;
 	}
 
+#if 0
+	unsigned discard = bs_Avaliable(maindata_stream) - sideinfo.main_data_begin;
+	printf("%u <-> %u <-> %u\n", cur_frame->maindata_size, sideinfo.main_data_begin, discard);
+#endif
 	if (bs_Length(maindata_stream) < sideinfo.main_data_begin) {
 		sprintf(log_msg_buf, "frame#%u maindata miss!", frame_count);
 		LOG_E("adjust_maindata", log_msg_buf);

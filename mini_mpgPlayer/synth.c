@@ -142,19 +142,112 @@ static const float _D[512] =
 /*
 coefficients Nik for the synthesis window
 */
-static float _N[64][32]; // need init ( _N[i][k] = cos((16+i)*(2*k+1)*PI/64) )
-// static float _N[32][32]; // need init ( _N[i][k] = cos(i*(2*k+1)*PI/64) )
+// static float _N[64][32]; // need init ( _N[i][k] = cos((16+i)*(2*k+1)*PI/64) )
+static float _N[32][32]; // need init ( _N[i][k] = cos(i*(2*k+1)*PI/64) )
 
 static float _U[512];
 static float _V[2][1024];
+
+static void memcpy_dword(void* dst, const void* src, unsigned cnt, unsigned down)
+{
+	if (down)
+		__asm std;
+
+	__asm {
+		mov edi, dword ptr[dst]
+		mov esi, dword ptr[src]
+		mov ecx, dword ptr[cnt]
+		rep movsd
+		cld
+	}
+}
+
+static void dct32to64(const float s[32], const int ch)
+{
+	float f_out[32], f_tmp[4];
+	__m128 f4_S0 = _mm_loadu_ps(s), f4_S1 = _mm_loadu_ps(s + 4), f4_S2 = _mm_loadu_ps(s + 8), f4_S3 = _mm_loadu_ps(s + 12), f4_S4 = _mm_loadu_ps(s + 16);
+	__m128 f4_S5 = _mm_loadu_ps(s + 20), f4_S6 = _mm_loadu_ps(s + 24), f4_S7 = _mm_loadu_ps(s + 28);
+	int i;
+
+	for (i = 0; i < 32; ++i) {
+		__m128 f4_sum = _mm_mul_ps(_mm_loadu_ps(_N[i]), f4_S0);
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 4), f4_S1));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 8), f4_S2));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 12), f4_S3));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 16), f4_S4));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 20), f4_S5));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 24), f4_S6));
+		f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(_mm_loadu_ps(_N[i] + 28), f4_S7));
+		_mm_storeu_ps(f_tmp, f4_sum);
+		f_out[i] = f_tmp[0] + f_tmp[1] + f_tmp[2] + f_tmp[3];
+	}
+
+	memcpy_dword(_V[ch], f_out + 16, 16, 0);
+	_V[ch][16] = 0;
+	for (i = 17; i < 48; ++i)
+		_V[ch][i] = -f_out[48 - i];
+	for (; i < 64; ++i)
+		_V[ch][i] = -f_out[i - 48];
+}
+
+#if 0
+static void write_f4_s2_samples(const float f_4[4], const unsigned nch, short pcm_out[8], unsigned* off)
+{
+	if (f_4[0] >= 32766.5f) {
+		pcm_out[0] = 32767;
+	} else if (f_4[0] <= -32767.5f) {
+		pcm_out[0] = -32768;
+	} else {
+		if ((pcm_out[0] = (short)(f_4[0] + 0.5f)) < 0)
+			pcm_out[0] -= 1;
+	}
+	///////////
+	if (f_4[1] >= 32766.5f) {
+		pcm_out[2] = 32767;
+	} else if (f_4[1] <= -32767.5f) {
+		pcm_out[2] = -32768;
+	} else {
+		if ((pcm_out[2] = (short)(f_4[1] + 0.5f)) < 0)
+			pcm_out[2] -= 1;
+	}
+	///////////
+	if (f_4[2] >= 32766.5f) {
+		pcm_out[4] = 32767;
+	} else if (f_4[2] <= -32767.5f) {
+		pcm_out[4] = -32768;
+	} else {
+		if ((pcm_out[4] = (short)(f_4[2] + 0.5f)) < 0)
+			pcm_out[4] -= 1;
+	}
+	///////////
+	if (f_4[3] >= 32766.5f) {
+		pcm_out[6] = 32767;
+	} else if (f_4[3] <= -32767.5f) {
+		pcm_out[6] = -32768;
+	} else {
+		if ((pcm_out[6] = (short)(f_4[3] + 0.5f)) < 0)
+			pcm_out[6] -= 1;
+	}
+	////////
+
+	if (nch == 1) {
+		pcm_out[1] = pcm_out[0];
+		pcm_out[3] = pcm_out[2];
+		pcm_out[5] = pcm_out[4];
+		pcm_out[7] = pcm_out[6];
+	}
+
+	*off += 16;
+}
+#endif
 
 void init_synthesis_tabs(void)
 {
 	int i, j, k;
 
-	for (i = 0; i < 64; ++i) {
+	for (i = 0; i < 32; ++i) {
 		for (j = 0; j < 32; ++j) {
-			k = (16 + i) * (2 * j + 1);
+			k = i * (2 * j + 1);
 			_N[i][j] = (float)cos(k * M_PI / 64.0);
 		}
 	}
@@ -166,74 +259,154 @@ void init_synthesis_tabs(void)
 
 void synthesis_subband_filter(const float s[32], const int ch, const int nch, unsigned char* pcm_buf, unsigned* off)
 {
-	int i, j, k;
-	__m128 f4_sum, f4_32768 = _mm_set1_ps(32768.0f);
-	float f_tmp[4];
+	static __m128 f4_32768 = { 32768.0f, 32768.0f, 32768.0f, 32768.0f };
+	int i;
+	__m128 f4_sum[8] = { 0 };
+	float f_tmp[8 * 4];
 
-	float* p = (float*)(_V[ch] + 1023);
-	__asm {
-		mov edi, dword ptr[p]
-		mov esi, edi
-		sub esi, 64*4
-		mov ecx, 960
-		std
-		rep movsd
-		cld
-	}
+	// Shifting
+	memcpy_dword(_V[ch] + 1023, _V[ch] + 1023 - 64, 960, 1);	// using loop queue?
 
 	// Matrixing (DCT(32 -> 64))
-	for (i = 0; i < 64; ++i) {
-		f4_sum = _mm_setzero_ps();
-		for (j = 0; j < 32; j += 4) {
-			__m128 f4_N = _mm_loadu_ps(&_N[i][j]);
-			__m128 f4_S = _mm_loadu_ps(&s[j]);
-			f4_sum = _mm_add_ps(f4_sum, _mm_mul_ps(f4_N, f4_S));
-		}
-		_mm_storeu_ps(f_tmp, f4_sum);
-		_V[ch][i] = f_tmp[0] + f_tmp[1] + f_tmp[2] + f_tmp[3];
-	}
+	dct32to64(s, ch);
 
 	/*
 	* Build a 512 values vector U
 	* Window by 512 coefficients
 	*/
 	for (i = 0; i < 512; i += 64) {
+#if 1
+		__m128 f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2]), _mm_loadu_ps(&_D[i]));
+		_mm_storeu_ps(&_U[i], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96]), _mm_loadu_ps(&_D[i + 32]));
+		_mm_storeu_ps(&_U[i + 32], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 4]), _mm_loadu_ps(&_D[i + 4]));
+		_mm_storeu_ps(&_U[i + 4], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 4]), _mm_loadu_ps(&_D[i + 32 + 4]));
+		_mm_storeu_ps(&_U[i + 32 + 4], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 8]), _mm_loadu_ps(&_D[i + 8]));
+		_mm_storeu_ps(&_U[i + 8], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 8]), _mm_loadu_ps(&_D[i + 32 + 8]));
+		_mm_storeu_ps(&_U[i + 32 + 8], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 12]), _mm_loadu_ps(&_D[i + 12]));
+		_mm_storeu_ps(&_U[i + 12], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 12]), _mm_loadu_ps(&_D[i + 32 + 12]));
+		_mm_storeu_ps(&_U[i + 32 + 12], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 16]), _mm_loadu_ps(&_D[i + 16]));
+		_mm_storeu_ps(&_U[i + 16], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 16]), _mm_loadu_ps(&_D[i + 32 + 16]));
+		_mm_storeu_ps(&_U[i + 32 + 16], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 20]), _mm_loadu_ps(&_D[i + 20]));
+		_mm_storeu_ps(&_U[i + 20], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 20]), _mm_loadu_ps(&_D[i + 32 + 20]));
+		_mm_storeu_ps(&_U[i + 32 + 20], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 24]), _mm_loadu_ps(&_D[i + 24]));
+		_mm_storeu_ps(&_U[i + 24], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 24]), _mm_loadu_ps(&_D[i + 32 + 24]));
+		_mm_storeu_ps(&_U[i + 32 + 24], f4_U);
+
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 28]), _mm_loadu_ps(&_D[i + 28]));
+		_mm_storeu_ps(&_U[i + 28], f4_U);
+		f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + 28]), _mm_loadu_ps(&_D[i + 32 + 28]));
+		_mm_storeu_ps(&_U[i + 32 + 28], f4_U);
+#else
 		for (j = 0; j < 32; j += 4) {
 			__m128 f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + j]), _mm_loadu_ps(&_D[i + j]));
 			_mm_storeu_ps(&_U[i + j], f4_U);
 			f4_U = _mm_mul_ps(_mm_loadu_ps(&_V[ch][i * 2 + 96 + j]), _mm_loadu_ps(&_D[i + 32 + j]));
 			_mm_storeu_ps(&_U[i + 32 + j], f4_U);
 		}
+#endif
 	}
 
 	/*
 	* Calculate 32 Samples
 	* Output 32 reconstructed PCM Samples
 	*/
-	for (i = 0; i < 32; i += 4) {
-		f4_sum = _mm_setzero_ps();
-		for (j = 0; j < 512; j += 32) {
-			f4_sum = _mm_add_ps(f4_sum, _mm_loadu_ps(&_U[i + j]));
-		}
-
-		// Output reconstructed PCM Sample
-		f4_sum = _mm_mul_ps(f4_sum, f4_32768);
-		_mm_storeu_ps(f_tmp, f4_sum);
-		for (k = 0; k < 4; ++k) {
-			if (f_tmp[k] >= 32766.5f) {
-				((short*)(pcm_buf + *off))[0] = 32767;
-			} else if (f_tmp[k] <= -32767.5f) {
-				((short*)(pcm_buf + *off))[0] = -32768;
-			} else {
-				((short*)(pcm_buf + *off))[0] = (short)(int)(f_tmp[k] + 0.5f);
-				if (((short*)(pcm_buf + *off))[0] < 0)
-					((short*)(pcm_buf + *off))[0] -= 1;
-			}
-
-			if (nch == 1)
-				((short*)(pcm_buf + *off))[1] = ((short*)(pcm_buf + *off))[0];
-
-			*off += 4;
-		}
+	for (i = 0; i < 512; i += 32) {
+		f4_sum[0] = _mm_add_ps(f4_sum[0], _mm_loadu_ps(_U + i));
+		f4_sum[1] = _mm_add_ps(f4_sum[1], _mm_loadu_ps(_U + i + 4));
+		f4_sum[2] = _mm_add_ps(f4_sum[2], _mm_loadu_ps(_U + i + 8));
+		f4_sum[3] = _mm_add_ps(f4_sum[3], _mm_loadu_ps(_U + i + 12));
+		f4_sum[4] = _mm_add_ps(f4_sum[4], _mm_loadu_ps(_U + i + 16));
+		f4_sum[5] = _mm_add_ps(f4_sum[5], _mm_loadu_ps(_U + i + 20));
+		f4_sum[6] = _mm_add_ps(f4_sum[6], _mm_loadu_ps(_U + i + 24));
+		f4_sum[7] = _mm_add_ps(f4_sum[7], _mm_loadu_ps(_U + i + 28));
 	}
+
+	f4_sum[0] = _mm_mul_ps(f4_sum[0], f4_32768);
+	_mm_storeu_ps(f_tmp, f4_sum[0]);
+	f4_sum[1] = _mm_mul_ps(f4_sum[1], f4_32768);
+	_mm_storeu_ps(f_tmp + 4, f4_sum[1]);
+	f4_sum[2] = _mm_mul_ps(f4_sum[2], f4_32768);
+	_mm_storeu_ps(f_tmp + 8, f4_sum[2]);
+	f4_sum[3] = _mm_mul_ps(f4_sum[3], f4_32768);
+	_mm_storeu_ps(f_tmp + 12, f4_sum[3]);
+	f4_sum[4] = _mm_mul_ps(f4_sum[4], f4_32768);
+	_mm_storeu_ps(f_tmp + 16, f4_sum[4]);
+	f4_sum[5] = _mm_mul_ps(f4_sum[5], f4_32768);
+	_mm_storeu_ps(f_tmp + 20, f4_sum[5]);
+	f4_sum[6] = _mm_mul_ps(f4_sum[6], f4_32768);
+	_mm_storeu_ps(f_tmp + 24, f4_sum[6]);
+	f4_sum[7] = _mm_mul_ps(f4_sum[7], f4_32768);
+	_mm_storeu_ps(f_tmp + 28, f4_sum[7]);
+
+#if 1
+	// Output reconstructed PCM Sample
+	for (i = 0; i < 32; i += 4) {
+		short* pcm_out = (short*)(pcm_buf + *off);
+		if (f_tmp[i] >= 32766.5f) {
+			pcm_out[0] = 32767;
+		} else if (f_tmp[i] <= -32767.5f) {
+			pcm_out[0] = -32768;
+		} else if ((pcm_out[0] = (short)(f_tmp[i] + 0.5f)) < 0)
+			pcm_out[0] -= 1;
+		///////////
+		if (f_tmp[i + 1] >= 32766.5f) {
+			pcm_out[2] = 32767;
+		} else if (f_tmp[i + 1] <= -32767.5f) {
+			pcm_out[2] = -32768;
+		} else if ((pcm_out[2] = (short)(f_tmp[i + 1] + 0.5f)) < 0)
+			pcm_out[2] -= 1;
+
+		///////////
+		if (f_tmp[i + 2] >= 32766.5f) {
+			pcm_out[4] = 32767;
+		} else if (f_tmp[i + 2] <= -32767.5f) {
+			pcm_out[4] = -32768;
+		} else if ((pcm_out[4] = (short)(f_tmp[i + 2] + 0.5f)) < 0)
+			pcm_out[4] -= 1;
+		///////////
+		if (f_tmp[i + 3] >= 32766.5f) {
+			pcm_out[6] = 32767;
+		} else if (f_tmp[i + 3] <= -32767.5f) {
+			pcm_out[6] = -32768;
+		} else if ((pcm_out[6] = (short)(f_tmp[i + 3] + 0.5f)) < 0)
+			pcm_out[6] -= 1;
+		////////
+		
+		if (nch == 1) {
+			pcm_out[1] = pcm_out[0];
+			pcm_out[3] = pcm_out[2];
+			pcm_out[5] = pcm_out[4];
+			pcm_out[7] = pcm_out[6];
+		}
+		*off += 16;
+	}
+#else
+	write_f4_s2_samples(f_tmp, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 4, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 8, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 12, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 16, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 20, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 24, nch, (short*)(pcm_buf + *off), off);
+	write_f4_s2_samples(f_tmp + 28, nch, (short*)(pcm_buf + *off), off);
+#endif
 }

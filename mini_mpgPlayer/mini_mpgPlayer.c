@@ -9,14 +9,13 @@ int main(int argc, char** argv)
 		return 0;
 	}
 
-	struct decoder_handle* decoder = decoder_Init(argv[1], OUTPUT_AUDIO, "1.wav");
+	printf("Input: \"%s\"\n\n", argv[1]);
 
+	struct decoder_handle* decoder = decoder_Init(argv[1], OUTPUT_AUDIO, NULL);
 	if (!decoder) {
 		LOG_E("decoder_Init", "failed!");
 		return -1;
 	}
-
-	printf("Input: \"%s\"\n\n", argv[1]);
 
 	clock_t s = clock(), e;
 	unsigned frame_count = decoder_Run(decoder);
