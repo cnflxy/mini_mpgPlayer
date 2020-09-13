@@ -6,7 +6,7 @@
 #include "tag.h"
 #include <stdlib.h>
 
-struct decoder_handle* decoder_Init(const char* const mp3_file_name, const int output_flags, const char* const wav_file_name)
+struct decoder_handle* decoder_Init(const char* const mp3_file_name, const enum OUTPUT_FLAGS output_flags, const char* const wav_file_name)
 {
 	struct decoder_handle* handle = NULL;
 
@@ -71,17 +71,17 @@ static void print_header_info(const struct mpeg_frame* const frame)
 	printf("\n\n");
 }
 
-unsigned decoder_Run(struct decoder_handle* const handle)
+uint32_t decoder_Run(struct decoder_handle* const handle)
 {
 	struct mpeg_frame* const cur_frame = &handle->cur_frame;
 	struct pcm_stream* const pcm_out = &handle->pcm;
-	unsigned frame_count = 0;
+	uint32_t frame_count = 0;
 	int stat;
 	char log_msg_buf[64];
 
 	decode_id3v1(handle->file_stream);
 
-	unsigned id3v2_size;
+	uint32_t id3v2_size;
 	while (decode_id3v2(handle->file_stream, &id3v2_size) == 0) {
 		fseek(handle->file_stream->file_ptr, id3v2_size, SEEK_CUR);
 		handle->file_stream->end_ptr = handle->file_stream->bit_buf;
@@ -98,7 +98,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 		return 0;
 	}
 
-	if (cur_frame->freeformat) {
+	if (cur_frame->is_freeformat) {
 		LOG_E("check_support", "not support the [freeformat bitrate] now!");
 		return 0;
 	}
@@ -113,7 +113,7 @@ unsigned decoder_Run(struct decoder_handle* const handle)
 	}
 
 	if (handle->output_flags & OUTPUT_FILE) {
-		fwrite("RIFF\xff\xff\xff\xffWAVEfmt \x0a\x0\x0\x0\x1\x0\x2\x0\x44\xac\x0\x0\xa\xb1\x2\x0\x4\x0\xa\0data\xff\xff\xff\xd0", 1, 55, handle->wav_ptr);
+		// fwrite("RIFF\xff\xff\xff\xffWAVEfmt \x0a\x0\x0\x0\x1\x0\x2\x0\x44\xac\x0\x0\xa\xb1\x2\x0\x4\x0\xa\0data\xff\xff\xff\xd0", 1, 55, handle->wav_ptr);
 	}
 
 	pcm_out->write_off[0] = 0;

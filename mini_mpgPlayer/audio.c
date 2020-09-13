@@ -6,7 +6,7 @@
 
 static CRITICAL_SECTION g_cs;
 static HWAVEOUT g_WaveDev;
-static unsigned g_nBlocks;
+static uint32_t g_nBlocks;
 
 static void CALLBACK waveout_callback(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
@@ -14,18 +14,18 @@ static void CALLBACK waveout_callback(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInsta
 		LPWAVEHDR wh = (LPWAVEHDR)dwParam1;
 		waveOutUnprepareHeader(hwo, wh, sizeof(WAVEHDR));
 		HGDIOBJ hg = GlobalHandle(wh->lpData);
-		GlobalUnlock(hg);
-		GlobalFree(hg);
+		if(hg && GlobalUnlock(hg))
+			GlobalFree(hg);
 		hg = GlobalHandle(wh);
-		GlobalUnlock(hg);
-		GlobalFree(hg);
+		if (hg && GlobalUnlock(hg))
+			GlobalFree(hg);
 		EnterCriticalSection(&g_cs);
 		--g_nBlocks;
 		LeaveCriticalSection(&g_cs);
 	}
 }
 
-int audio_open(unsigned rate)
+int audio_open(uint32_t rate)
 {
 	if (!waveOutGetNumDevs()) {
 		return -1;
@@ -63,7 +63,7 @@ void audio_close(void)
 	}
 }
 
-int play_samples(const void* data, unsigned len)
+int play_samples(const void* data, uint32_t len)
 {
 	while (g_nBlocks >> 4)
 		Sleep(76);
@@ -73,6 +73,10 @@ int play_samples(const void* data, unsigned len)
 		return -1;
 	}
 	void* pData = GlobalLock(hg_Data);
+	if (!pData) {
+		GlobalFree(hg_Data);
+		return -1;
+	}
 	CopyMemory(pData, data, len);
 
 	HGDIOBJ hg_Hdr = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(WAVEHDR));
@@ -82,6 +86,12 @@ int play_samples(const void* data, unsigned len)
 		return -1;
 	}
 	LPWAVEHDR wh = GlobalLock(hg_Hdr);
+	if (!wh) {
+		GlobalUnlock(hg_Data);
+		GlobalFree(hg_Data);
+		GlobalFree(hg_Hdr);
+		return -1;
+	}
 	wh->dwBufferLength = len;
 	wh->lpData = pData;
 

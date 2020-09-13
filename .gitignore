@@ -338,6 +338,7 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+/test
 /test/ffmpeg.exe
 /test/help.txt
 /test/32000_320_2.mp3

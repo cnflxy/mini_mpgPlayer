@@ -31,7 +31,7 @@ static const unsigned short _samples1frame_table[2][3] = {
 	{ 384, 1152, 576 }
 };
 
-static void decode_header(struct mpeg_header* const header, const unsigned h)
+static void decode_header(struct mpeg_header* const header, const uint32_t h)
 {
 	header->version = (h >> 19) & 3;
 	header->layer = (h >> 17) & 3;
@@ -47,7 +47,7 @@ static void decode_header(struct mpeg_header* const header, const unsigned h)
 	header->emphasis = h & 3;
 }
 
-static unsigned valid_header(const unsigned h)
+static unsigned valid_header(const uint32_t h)
 {
 	if ((h & 0xffe00000) != 0xffe00000) {
 		int r = 1;
@@ -73,10 +73,10 @@ static unsigned valid_header(const unsigned h)
 	return 0;
 }
 
-static unsigned _frame_count = 0;
+static uint32_t _frame_count = 0;
 static int sync_frame(struct mpeg_header* const header, struct bs* const bstream)
 {
-	unsigned h = 0, need_read = 4, skipped = 0, tmp;
+	uint32_t h = 0, need_read = 4, skipped = 0, tmp;
 
 	while (need_read) {
 		if ((tmp = bs_Avaliable(bstream)) < need_read) {
@@ -112,7 +112,7 @@ static int sync_frame(struct mpeg_header* const header, struct bs* const bstream
 	return 0;
 }
 
-static int get_frame_size(const struct mpeg_frame* const frame)
+static uint32_t get_frame_size(const struct mpeg_frame* const frame)
 {
 	// _samples1frame_table[header->version][header->layer] * header->bitrate * 1000 / 8 / header->samplingrate + header->padding? (header->layer == MPEG_LAYER_1? 4: 1): 0;
 
@@ -136,31 +136,37 @@ int decode_next_frame(struct mpeg_frame* const frame, struct bs* const bstream)
 		return -1;
 	}
 
-	frame->lsf = header->version != VERSION_10;
-	frame->freeformat = header->bitrate_index == 0;
+	// test
+	if (header->sampling_frequency != 0) {
+		printf("\n\n%u: %u\n\n", _frame_count, header->sampling_frequency);
+	}
+	// end test
+
+	frame->is_lsf = header->version != VERSION_10;
+	frame->is_freeformat = header->bitrate_index == 0;
 
 	frame->is_MS = header->mode == MODE_JointStereo && (header->mode_extension & 2);
 	frame->is_Intensity = header->mode == MODE_JointStereo && (header->mode_extension & 1);
 
 	frame->nch = header->mode == MODE_Mono ? 1 : 2;
 
-	frame->bitrate = _bitrate_table[frame->lsf][header->layer - 1][header->bitrate_index];
+	frame->bitrate = _bitrate_table[frame->is_lsf][header->layer - 1][header->bitrate_index];
 	frame->samplingrate = _samplingrate_table[header->version][header->sampling_frequency];
 
-	frame->frame_size = !frame->freeformat ? get_frame_size(frame) : 0;
-	frame->sideinfo_size = header->layer == LAYER_3 ? _l3_sideinfo_size[frame->lsf][frame->nch - 1] : 0;
+	frame->frame_size = !frame->is_freeformat ? get_frame_size(frame) : 0;
+	frame->sideinfo_size = header->layer == LAYER_3 ? _l3_sideinfo_size[frame->is_lsf][frame->nch - 1] : 0;
 
-	frame->pcm_size = (frame->lsf ? 2304U : 4608U)/* >> (frame->nch == 1)*/;
+	frame->pcm_size = (frame->is_lsf ? 2304U : 4608U)/* >> (frame->nch == 1)*/;
 
 	frame->header_size = 4;
 	if (!header->protection_bit)
 		frame->header_size += 2;
 
-	if (!frame->freeformat)
+	if (!frame->is_freeformat)
 		frame->maindata_size = frame->frame_size - frame->header_size - frame->sideinfo_size;
 	else frame->maindata_size = 0;
 
-	unsigned need = bs_Avaliable(bstream);
+	uint32_t need = bs_Avaliable(bstream);
 	if (need < frame->frame_size) {
 		need = frame->frame_size - need;
 		if (need != bs_Prefect(bstream, need)) {

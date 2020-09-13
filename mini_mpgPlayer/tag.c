@@ -45,7 +45,7 @@ void decode_id3v1(struct bs* const bstream)
 	bstream->end_ptr = bstream->bit_buf;
 }
 
-int decode_id3v2(struct bs* const bstream, unsigned* const size)
+int decode_id3v2(struct bs* const bstream, uint32_t* const size)
 {
 	if (bs_Prefect(bstream, 10) != 10)
 		return -1;
@@ -75,9 +75,9 @@ int decode_id3v2(struct bs* const bstream, unsigned* const size)
 #define VBR_TAG_INFO	0x6f666e49U	// CBR (Constant Bit Rate).
 #define VBR_TAG_XING	0x676e6958U	// VBR/ABR (Variable Bit Rate/Average Bit Rate).
 
-static unsigned byte2uint(const struct bs* const stream, int off)
+static uint32_t byte2uint(const struct bs* const stream, int off)
 {
-	unsigned i = stream->byte_ptr[off];
+	uint32_t i = stream->byte_ptr[off];
 	i <<= 8;
 	i |= stream->byte_ptr[off + 1];
 	i <<= 8;
@@ -92,8 +92,8 @@ int get_vbr_tag(const struct bs* const bstream, const struct mpeg_frame* const f
 	if (frame->header.version != VERSION_10 || frame->header.layer != LAYER_3)
 		return -1;
 
-	unsigned off = frame->sideinfo_size;
-	unsigned tag_magic = *(unsigned*)(bstream->byte_ptr + off);
+	uint32_t off = frame->sideinfo_size;
+	uint32_t tag_magic = *(uint32_t*)(bstream->byte_ptr + off);
 
 	if (tag_magic == VBR_TAG_INFO)
 		puts("Info - CBR (Constant Bit Rate)");
@@ -107,14 +107,14 @@ int get_vbr_tag(const struct bs* const bstream, const struct mpeg_frame* const f
 
 	double duration = 0;
 	if (flags & 0x1) {	// Number of Frames
-		unsigned frames = byte2uint(bstream, off);
-		duration = (frames - 1) * (frame->lsf ? 576.0 : 1152.0) / frame->samplingrate;
+		uint32_t frames = byte2uint(bstream, off);
+		duration = (frames - 1) * (frame->is_lsf ? 576.0 : 1152.0) / frame->samplingrate;
 		printf("Number of Frames: %d --> %.2lfsecs\n", frames, duration);
 		off += 4;
 	}
 
 	if (flags & 0x2) { // Size in Bytes
-		unsigned size = byte2uint(bstream, off);
+		uint32_t size = byte2uint(bstream, off);
 		duration = size / (frame->bitrate * 125.0);
 		printf("Size in Bytes: %dbytes --> %.2lfsecs\n", size, duration);
 		off += 4;
@@ -131,7 +131,7 @@ int get_vbr_tag(const struct bs* const bstream, const struct mpeg_frame* const f
 	}
 
 	char encoder_str[16 + 1];
-	unsigned len = 0;
+	uint32_t len = 0;
 	while (len < 16 && (isalnum(bstream->byte_ptr[off + len]) || bstream->byte_ptr[off + len] == '.' || bstream->byte_ptr[off + len] == ' ')) {
 		encoder_str[len] = bstream->byte_ptr[off + len];
 		++len;

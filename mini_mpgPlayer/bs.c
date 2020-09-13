@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct bs* bs_Init(unsigned size, const char* const file_name)
+struct bs* bs_Init(uint32_t size, const char* const file_name)
 {
 	struct bs* s;
 
@@ -42,29 +42,29 @@ void bs_Release(struct bs** bstream)
 	}
 }
 
-unsigned bs_Avaliable(const struct bs* bstream)
+uint32_t bs_Avaliable(const struct bs* bstream)
 {
 	return bstream->end_ptr - bstream->byte_ptr;
 }
 
-unsigned bs_Length(const struct bs* bstream)
+uint32_t bs_Length(const struct bs* bstream)
 {
 	//if (bstream)
 	return bstream->end_ptr - bstream->bit_buf;
 	//return 0;
 }
 
-unsigned bs_Capacity(const struct bs* bstream)
+uint32_t bs_Capacity(const struct bs* bstream)
 {
 	return bstream->max_ptr - bstream->bit_buf;
 }
 
-unsigned bs_freeSpace(const struct bs* bstream)
+uint32_t bs_freeSpace(const struct bs* bstream)
 {
 	return bstream->max_ptr - bstream->end_ptr;
 }
 
-unsigned bs_getBitpos(const struct bs* bstream)
+uint32_t bs_getBitpos(const struct bs* bstream)
 {
 	return bstream->bit_pos;
 }
@@ -72,7 +72,7 @@ unsigned bs_getBitpos(const struct bs* bstream)
 // bit_buf --> byte_ptr --> end_ptr --> max_ptr
 // 
 
-unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
+uint32_t bs_Append(struct bs* bstream, const void* src, int32_t off, uint32_t len)
 {
 	if (len) {
 		//if (len > bs_Capacity(bstream))
@@ -115,7 +115,7 @@ unsigned bs_Append(struct bs* bstream, const void* src, int off, unsigned len)
 }
 
 // @@@ byte_pos[0] ___ end_pos ### max_len
-unsigned bs_Prefect(struct bs* bstream, unsigned len)
+uint32_t bs_Prefect(struct bs* bstream, uint32_t len)
 {
 	if (len == bs_Append(bstream, NULL, 0, len)) {
 		len = fread(bstream->end_ptr, 1, len, bstream->file_ptr);
@@ -125,7 +125,7 @@ unsigned bs_Prefect(struct bs* bstream, unsigned len)
 	return len;
 }
 
-unsigned bs_skipBytes(struct bs* bstream, unsigned nBytes)
+uint32_t bs_skipBytes(struct bs* bstream, uint32_t nBytes)
 {
 	if (nBytes > bs_Avaliable(bstream) + bs_freeSpace(bstream))
 		nBytes = bs_Avaliable(bstream) + bs_freeSpace(bstream);
@@ -136,7 +136,7 @@ unsigned bs_skipBytes(struct bs* bstream, unsigned nBytes)
 	return nBytes;
 }
 
-unsigned bs_skipBits(struct bs* bstream, unsigned nBits)
+uint32_t bs_skipBits(struct bs* bstream, uint32_t nBits)
 {
 	bstream->bit_pos += nBits;
 	bstream->byte_ptr += bstream->bit_pos >> 3;
@@ -145,7 +145,7 @@ unsigned bs_skipBits(struct bs* bstream, unsigned nBits)
 	return nBits;
 }
 
-unsigned bs_backBits(struct bs* bstream, unsigned nBits)
+uint32_t bs_backBits(struct bs* bstream, uint32_t nBits)
 {
 	bstream->bit_pos -= nBits;
 	bstream->byte_ptr += bstream->bit_pos >> 3;
@@ -154,9 +154,9 @@ unsigned bs_backBits(struct bs* bstream, unsigned nBits)
 	return nBits;
 }
 
-unsigned char bs_readBit(struct bs* bstream)
+uint8_t bs_readBit(struct bs* bstream)
 {
-	unsigned char bit = *bstream->byte_ptr << bstream->bit_pos;
+	uint8_t bit = *bstream->byte_ptr << bstream->bit_pos;
 	bit >>= 7;
 	bstream->byte_ptr += ++bstream->bit_pos >> 3;
 	bstream->bit_pos &= 7;
@@ -165,7 +165,7 @@ unsigned char bs_readBit(struct bs* bstream)
 }
 
 // 2 <= nBits <= 24
-unsigned bs_readBits(struct bs* bstream, unsigned nBits)
+uint32_t bs_readBits(struct bs* bstream, uint32_t nBits)
 {
 	//int bits = 0, i = 0, n = (nBits + stream->bit_pos + 7) >> 3;
 	//while (i < n) {
@@ -206,7 +206,7 @@ unsigned bs_readBits(struct bs* bstream, unsigned nBits)
 	//bits >>= (32 - nBits);
 	//bits &= ~(0xffffffffU << nBits);
 
-	unsigned bits = bstream->byte_ptr[0];
+	uint32_t bits = bstream->byte_ptr[0];
 	bits <<= 8;
 	bits |= bstream->byte_ptr[1];
 	bits <<= 8;
@@ -222,13 +222,13 @@ unsigned bs_readBits(struct bs* bstream, unsigned nBits)
 	return bits;
 }
 
-unsigned bs_readByte(struct bs* bstream)
+uint32_t bs_readByte(struct bs* bstream)
 {
 	unsigned byte = *bstream->byte_ptr++;
 	return byte;
 }
 
-unsigned bs_readBytes(struct bs* bstream, void* out, unsigned nBytes)
+uint32_t bs_readBytes(struct bs* bstream, void* out, uint32_t nBytes)
 {
 	return 0;
 }

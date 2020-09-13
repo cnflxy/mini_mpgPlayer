@@ -1,10 +1,12 @@
 #ifndef _MMP_NEWHUFFMAN_H_
 #define _MMP_NEWHUFFMAN_H_ 1
 
+#include <stdint.h>
+
 struct huff_tab {
-	const unsigned short* table;
-	const unsigned char linbits;
-	const unsigned short treelen;
+	const uint16_t* table;
+	const uint8_t linbits;
+	const uint16_t treelen;
 };
 
 static const unsigned short tab0[] = {

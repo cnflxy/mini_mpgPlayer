@@ -6,7 +6,7 @@ int main(int argc, char** argv)
 {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s [*.mp3]\n", *argv);
-		return 0;
+		return -1;
 	}
 
 	printf("Input: \"%s\"\n\n", argv[1]);
@@ -18,15 +18,15 @@ int main(int argc, char** argv)
 	}
 
 	clock_t s = clock(), e;
-	unsigned frame_count = decoder_Run(decoder);
+	uint32_t frame_count = decoder_Run(decoder);
 	decoder_Release(&decoder);
 	e = clock();
 	if (frame_count) {
-		printf("\ntime: %.2lfsecs", (double)(e - s) / CLOCKS_PER_SEC);
+		printf("\ntime: %.2lfsecs", ((double)e - s) / CLOCKS_PER_SEC);
 		printf("\nframe count: %u\n", frame_count);
 	}
 
-	getchar();
+	(void)getchar();
 
 	return 0;
 }

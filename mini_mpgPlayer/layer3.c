@@ -906,7 +906,7 @@ void l3_init(const struct mpeg_header* header)
 
 static short is[SBLIMIT * SSLIMIT];
 static float xr[2][SBLIMIT * SSLIMIT];
-int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
+int l3_decode_samples(struct decoder_handle* handle, uint32_t frame_count)
 {
 	const struct mpeg_frame* const cur_frame = &handle->cur_frame;
 	struct bs* const file_stream = handle->file_stream;
@@ -973,8 +973,8 @@ int l3_decode_samples(struct decoder_handle* handle, unsigned frame_count)
 					cur_gr->ch[1].nonzero_len = cur_gr->ch[0].nonzero_len;
 				else cur_gr->ch[0].nonzero_len = cur_gr->ch[1].nonzero_len;
 
-				if (cur_frame->is_MS);
-				l3_do_ms_stereo(cur_gr->ch[0].nonzero_len, xr);
+				if (cur_frame->is_MS)
+					l3_do_ms_stereo(cur_gr->ch[0].nonzero_len, xr);
 				if (cur_frame->is_Intensity) {
 					LOG_W("chech_stereo", "intesity_stereo not supported!");
 					// l3_do_intesity_stereo(cur_gr, scalefac[0], xr);

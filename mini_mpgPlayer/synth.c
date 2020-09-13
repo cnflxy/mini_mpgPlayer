@@ -1,4 +1,5 @@
 #include "synth.h"
+#include <stdbool.h>
 #include <math.h>
 #include <immintrin.h>
 
@@ -148,7 +149,7 @@ static float _N[32][32]; // need init ( _N[i][k] = cos(i*(2*k+1)*PI/64) )
 static float _U[512];
 static float _V[2][1024];
 
-static void memcpy_dword(void* dst, const void* src, unsigned cnt, unsigned down)
+static void memcpy_dword(void* dst, const void* src, uint32_t cnt, bool down)
 {
 	if (down)
 		__asm std;
@@ -162,7 +163,7 @@ static void memcpy_dword(void* dst, const void* src, unsigned cnt, unsigned down
 	}
 }
 
-static void dct32to64(const float s[32], const int ch)
+static void dct32to64(const float s[32], const uint8_t ch)
 {
 	float f_out[32], f_tmp[4];
 	__m128 f4_S0 = _mm_loadu_ps(s), f4_S1 = _mm_loadu_ps(s + 4), f4_S2 = _mm_loadu_ps(s + 8), f4_S3 = _mm_loadu_ps(s + 12), f4_S4 = _mm_loadu_ps(s + 16);
@@ -257,7 +258,7 @@ void init_synthesis_tabs(void)
 	//}
 }
 
-void synthesis_subband_filter(const float s[32], const int ch, const int nch, unsigned char* pcm_buf, unsigned* off)
+void synthesis_subband_filter(const float s[32], const uint8_t ch, const uint8_t nch, uint8_t* pcm_buf, uint32_t* off)
 {
 	static __m128 f4_32768 = { 32768.0f, 32768.0f, 32768.0f, 32768.0f };
 	int i;
@@ -360,19 +361,19 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 #if 1
 	// Output reconstructed PCM Sample
 	for (i = 0; i < 32; i += 4) {
-		short* pcm_out = (short*)(pcm_buf + *off);
+		int16_t* pcm_out = (int16_t*)(pcm_buf + *off);
 		if (f_tmp[i] >= 32766.5f) {
 			pcm_out[0] = 32767;
 		} else if (f_tmp[i] <= -32767.5f) {
 			pcm_out[0] = -32768;
-		} else if ((pcm_out[0] = (short)(f_tmp[i] + 0.5f)) < 0)
+		} else if ((pcm_out[0] = (int16_t)(f_tmp[i] + 0.5f)) < 0)
 			pcm_out[0] -= 1;
 		///////////
 		if (f_tmp[i + 1] >= 32766.5f) {
 			pcm_out[2] = 32767;
 		} else if (f_tmp[i + 1] <= -32767.5f) {
 			pcm_out[2] = -32768;
-		} else if ((pcm_out[2] = (short)(f_tmp[i + 1] + 0.5f)) < 0)
+		} else if ((pcm_out[2] = (int16_t)(f_tmp[i + 1] + 0.5f)) < 0)
 			pcm_out[2] -= 1;
 
 		///////////
@@ -380,14 +381,14 @@ void synthesis_subband_filter(const float s[32], const int ch, const int nch, un
 			pcm_out[4] = 32767;
 		} else if (f_tmp[i + 2] <= -32767.5f) {
 			pcm_out[4] = -32768;
-		} else if ((pcm_out[4] = (short)(f_tmp[i + 2] + 0.5f)) < 0)
+		} else if ((pcm_out[4] = (int16_t)(f_tmp[i + 2] + 0.5f)) < 0)
 			pcm_out[4] -= 1;
 		///////////
 		if (f_tmp[i + 3] >= 32766.5f) {
 			pcm_out[6] = 32767;
 		} else if (f_tmp[i + 3] <= -32767.5f) {
 			pcm_out[6] = -32768;
-		} else if ((pcm_out[6] = (short)(f_tmp[i + 3] + 0.5f)) < 0)
+		} else if ((pcm_out[6] = (int16_t)(f_tmp[i + 3] + 0.5f)) < 0)
 			pcm_out[6] -= 1;
 		////////
 		
