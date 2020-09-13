@@ -391,7 +391,7 @@ void synthesis_subband_filter(const float s[32], const uint8_t ch, const uint8_t
 		} else if ((pcm_out[6] = (int16_t)(f_tmp[i + 3] + 0.5f)) < 0)
 			pcm_out[6] -= 1;
 		////////
-		
+
 		if (nch == 1) {
 			pcm_out[1] = pcm_out[0];
 			pcm_out[3] = pcm_out[2];

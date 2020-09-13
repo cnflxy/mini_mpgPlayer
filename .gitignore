@@ -338,27 +338,4 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
-/test
-/test/ffmpeg.exe
-/test/help.txt
-/test/32000_320_2.mp3
-/test/32000_32_2.mp3
-/test/44100_320_2.mp3
-/test/44100_320_2_1.mp3
-/test/48000_256_2.mp3
-/test/48000_320_1.mp3
-/test/48000_320_2.mp3
-/test/The Eagles - Hotel California.flac
-/test/李宗盛-山丘.flac
-/test/杨宗纬-越过山丘-单曲.flac
-/test/纯音乐-天空之城.flac
-/test/蔡琴 - 渡口.flac
-/test/居安思危-苏联的特权阶层.mov
-/test/居安思危-苏联的特权阶层.mp4
-/test/convergence_-_points_of_view
-/test/ffplay.exe
-/test/MP3 Player.exe
-/test/MPEGAudioLoader.exe
-/test/mpg123.exe
-/test/新建文本文档.txt
-/test/mini_mpgPlayer.exe
+test/

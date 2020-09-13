@@ -136,11 +136,13 @@ int decode_next_frame(struct mpeg_frame* const frame, struct bs* const bstream)
 		return -1;
 	}
 
+#if 0
 	// test
 	if (header->sampling_frequency != 0) {
 		printf("\n\n%u: %u\n\n", _frame_count, header->sampling_frequency);
 	}
 	// end test
+#endif
 
 	frame->is_lsf = header->version != VERSION_10;
 	frame->is_freeformat = header->bitrate_index == 0;

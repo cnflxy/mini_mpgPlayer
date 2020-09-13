@@ -14,7 +14,7 @@ static void CALLBACK waveout_callback(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInsta
 		LPWAVEHDR wh = (LPWAVEHDR)dwParam1;
 		waveOutUnprepareHeader(hwo, wh, sizeof(WAVEHDR));
 		HGDIOBJ hg = GlobalHandle(wh->lpData);
-		if(hg && GlobalUnlock(hg))
+		if (hg && GlobalUnlock(hg))
 			GlobalFree(hg);
 		hg = GlobalHandle(wh);
 		if (hg && GlobalUnlock(hg))
